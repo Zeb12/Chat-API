@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- SEO Meta Tags -->
+    <title>ChatBot Pro: AI Chatbot Generator for Your Website | No-Code Setup</title>
+    <meta name="description" content="Create a custom AI chatbot for your website in minutes with ChatBot Pro. No coding required. Define personality, add FAQs, and embed a powerful script to boost engagement." />
+    <meta name="keywords" content="AI, chatbot, generator, custom chatbot, embeddable chatbot, customer support, website widget, no-code, business AI, lead generation, SaaS, website AI" />
+    <meta name="author" content="ChatBot Pro Team" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://aichatbotgenerator.example.com/" />
+    <meta property="og:title" content="ChatBot Pro: AI Chatbot Generator for Your Website" />
+    <meta property="og:description" content="Generate and embed a custom AI chatbot on your website in minutes. Define its personality, business info, and FAQs without writing a single line of code." />
+    <meta property="og:image" content="https://aichatbotgenerator.example.com/og-image.png" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://aichatbotgenerator.example.com/" />
+    <meta property="twitter:title" content="ChatBot Pro: AI Chatbot Generator for Your Website" />
+    <meta property="twitter:description" content="Generate and embed a custom AI chatbot on your website in minutes. Define its personality, business info, and FAQs without writing a single line of code." />
+    <meta property="twitter:image" content="https://aichatbotgenerator.example.com/og-image.png" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+            colors: {
+              primary: {
+                DEFAULT: '#7C3AED', // violet-500
+                light: '#8B5CF6',   // violet-400
+                dark: '#6D28D9',    // violet-700
+              },
+              secondary: '#10b981',
+              background: '#f8fafc',
+              surface: '#ffffff',
+              onPrimary: '#ffffff',
+              onSurface: '#111827',
+              onSurfaceSecondary: '#6b7280',
+            },
+            animation: {
+              'fade-in': 'fadeIn 0.5s ease-out forwards',
+              'slide-up': 'slideUp 0.5s ease-out forwards',
+              'float': 'float 6s ease-in-out infinite',
+            },
+            keyframes: {
+              fadeIn: {
+                '0%': { opacity: 0 },
+                '100%': { opacity: 1 },
+              },
+              slideUp: {
+                '0%': { transform: 'translateY(20px)', opacity: 0 },
+                '100%': { transform: 'translateY(0)', opacity: 1 },
+              },
+              float: {
+                '0%': { transform: 'translateY(0px)' },
+                '50%': { transform: 'translateY(-20px)' },
+                '100%': { transform: 'translateY(0px)' },
+              }
+            }
+          }
+        }
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.1.1/",
+    "react": "https://aistudiocdn.com/react@^19.1.1",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.17.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.44.4"
+  }
+}
+</script>
+</head>
+  <body class="bg-slate-50 dark:bg-gray-900 text-onSurface dark:text-gray-200 font-sans antialiased">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

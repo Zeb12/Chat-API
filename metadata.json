@@ -1,0 +1,5 @@
+{
+  "name": "AI Chatbot Generator",
+  "description": "An application to help users generate a custom AI-powered chatbot script that can be easily embedded into their website. Users can define the chatbot's personality, business information, and frequently asked questions.",
+  "requestFramePermissions": []
+}
