@@ -11,10 +11,6 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.44.4';
 import { corsHeaders } from '../_shared/cors.ts';
 
-// IMPORTANT: In a production environment, this should be an environment variable
-// to avoid hardcoding sensitive information.
-const ADMIN_EMAIL = 'zebsnellenbarger60@gmail.com';
-
 serve(async (req) => {
   // Handle preflight CORS requests for browser security.
   if (req.method === 'OPTIONS') {
@@ -48,8 +44,8 @@ serve(async (req) => {
       );
     }
 
-    // 2. Authorize the action: Ensure the authenticated user is an admin.
-    if (user.email !== ADMIN_EMAIL) {
+    // 2. Authorize the action: Ensure the authenticated user has the 'Admin' role.
+    if (user.user_metadata?.role !== 'Admin') {
       return new Response(
         JSON.stringify({ error: 'Permission denied. You must be an admin to perform this action.' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

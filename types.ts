@@ -1,3 +1,4 @@
+
 export interface BusinessInfo {
   name: string;
   description: string;
@@ -31,12 +32,7 @@ export interface Plan {
   features: string[];
   cta: string;
   featured?: boolean;
-  sort_order?: number;
-}
-
-export interface PlansResponse {
-  plans: Plan[];
-  isDynamic: boolean;
+  maxChatbots: number;
 }
 
 export interface DashboardStats {

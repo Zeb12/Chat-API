@@ -1,7 +1,6 @@
-
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import type { ChatbotConfig, DashboardStats, ChatbotRecord, FAQ, AdminDashboardStats, UserRecord, UserGrowthDataPoint, PlanDistribution, Plan, PlansResponse } from '../types';
-import { DEFAULT_PLANS } from '../constants';
+import type { ChatbotConfig, DashboardStats, ChatbotRecord, FAQ, AdminDashboardStats, UserRecord, UserGrowthDataPoint, PlanDistribution } from '../types';
+import { PLANS } from '../constants';
 
 // --- IMPORTANT: CONFIGURE YOUR SUPABASE CREDENTIALS ---
 // You can find these in your Supabase project dashboard under:
@@ -12,36 +11,44 @@ import { DEFAULT_PLANS } from '../constants';
 //
 // NOTE: Do NOT use the "service_role" key here, as it's not secure for the browser.
 // Also, do NOT use the "publishable" key; you need the "anon" key for authentication.
-// FIX: Add explicit 'string' types to widen the types from literals, resolving the comparison errors below.
 const supabaseUrl: string = 'https://iezxuhaxapklxuxybgci.supabase.co';
 const supabaseAnonKey: string = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imllenh1aGF4YXBrbHh1eHliZ2NpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTczNTEzNDAsImV4cCI6MjA3MjkyNzM0MH0.iTPlc2IcZR1Fz_Og3czXRw4ngtW1PgjY1e9ldLPixxo';
 
-// This check determines if the user has configured their Supabase credentials.
-// The app will show a configuration screen until these values are replaced.
-export const isSupabaseConfigured =
-  supabaseUrl !== 'YOUR_SUPABASE_URL' &&
-  supabaseAnonKey !== 'YOUR_SUPABASE_ANON_KEY';
-
-// FIX: Conditionally initialize the Supabase client to prevent a startup crash.
-// The client was previously being created with placeholder values, causing an "Invalid URL"
-// error that resulted in a white screen. Now, it's only created if the credentials are valid.
 let supabaseSingleton: SupabaseClient | null = null;
-if (isSupabaseConfigured) {
+let supabaseInitializationError: string | null = null;
+
+// Always attempt to create the Supabase client.
+// The `try...catch` block will handle errors from invalid credentials (including the initial placeholders)
+// and provide a specific error message to the user.
+try {
   supabaseSingleton = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
-      // Explicitly enable session persistence. This ensures that the user's
-      // session is stored in localStorage and they remain logged in between visits.
       persistSession: true,
-      // Automatically refresh the auth token. This prevents the user from being
-      // logged out due to an expired token.
       autoRefreshToken: true,
-      // Detects the session from the URL, which is necessary for OAuth and magic links.
       detectSessionInUrl: true,
     },
   });
+
+  // After attempting to create the client, explicitly check if the placeholders are still there.
+  // The createClient function might not throw an error for a valid-looking but incorrect API key.
+  if (supabaseUrl === 'YOUR_SUPABASE_URL' || supabaseAnonKey === 'YOUR_SUPABASE_ANON_KEY') {
+    // We clear the singleton to prevent the app from trying to use a client configured with placeholder values.
+    supabaseSingleton = null; 
+    // This custom error will be caught and used to display the `ConfigurationNeeded` component.
+    throw new Error("Action Required: Configure Supabase credentials in `services/geminiService.ts`.");
+  }
+
+} catch (error) {
+  console.error("Supabase initialization error:", error);
+  // Store the error message to be displayed to the user via the appropriate error component.
+  supabaseInitializationError = error instanceof Error 
+      ? error.message 
+      : "An unknown error occurred during Supabase client creation.";
 }
 
 export const supabase: SupabaseClient | null = supabaseSingleton;
+export const initializationError: string | null = supabaseInitializationError;
+
 
 // --- INSTRUCTIONS FOR DATABASE SETUP ---
 /**
@@ -88,43 +95,14 @@ export const supabase: SupabaseClient | null = supabaseSingleton;
  *    ALTER VIEW public.all_users OWNER TO postgres;
  *    ALTER VIEW public.all_users ENABLE ROW LEVEL SECURITY;
  *
- *    -- Create a policy that only allows your designated admin email to read from this view.
- *    -- IMPORTANT: Replace 'zebsnellenbarger60@gmail.com' with your actual admin email address.
+ *    -- Create a policy that only allows users with an 'Admin' role to read from this view.
+ *    -- This is more secure and flexible than hardcoding an email address.
+ *    -- An admin can grant other users admin privileges from the app's admin dashboard.
  *    CREATE POLICY "Allow admin to read all users" ON public.all_users
  *      FOR SELECT USING (
- *        auth.jwt()->>'email' = 'zebsnellenbarger60@gmail.com'
+ *        (SELECT raw_user_meta_data->>'role' FROM auth.users WHERE id = auth.uid()) = 'Admin'
  *      );
  *
- * 3. A 'plans' table for dynamic pricing:
- *    This allows admins to manage pricing plans from the dashboard. Run this in the SQL editor:
- *    
- *    CREATE TABLE public.plans (
- *      id TEXT PRIMARY KEY,
- *      name TEXT NOT NULL,
- *      price TEXT NOT NULL,
- *      price_detail TEXT NOT NULL,
- *      features JSONB DEFAULT '[]'::jsonb,
- *      cta TEXT NOT NULL,
- *      featured BOOLEAN DEFAULT false,
- *      sort_order INT
- *    );
- *
- *    -- Enable Row Level Security (RLS)
- *    ALTER TABLE public.plans ENABLE ROW LEVEL SECURITY;
- *
- *    -- Policy: Allow public read access for all users
- *    CREATE POLICY "Allow public read access to plans" ON public.plans
- *      FOR SELECT USING (true);
- *
- *    -- Policy: Allow users with an 'Admin' role in their metadata to manage plans
- *    -- This is more secure and flexible than hardcoding an email address.
- *    CREATE POLICY "Allow admins to manage plans" ON public.plans
- *      FOR ALL USING ( (auth.jwt() -> 'user_metadata' ->> 'role') = 'Admin' )
- *      WITH CHECK ( (auth.jwt() -> 'user_metadata' ->> 'role') = 'Admin' );
- *
- *    -- After creating the table, go to the Table Editor, select the 'plans' table,
- *    -- and click 'Insert row' to add your pricing plans. You can use the data from
- *    -- 'constants.ts' as a starting point.
  */
 
 export const generateChatbotScript = async (config: ChatbotConfig): Promise<string> => {
@@ -321,36 +299,6 @@ export const getChatbots = async (): Promise<ChatbotRecord[]> => {
   }));
 };
 
-/**
- * Fetches the full configuration of a single chatbot.
- * @param chatbotId The ID of the chatbot to fetch.
- * @returns A promise that resolves to the chatbot's configuration.
- */
-export const getChatbotConfig = async (chatbotId: string): Promise<ChatbotConfig> => {
-  if (!supabase) throw new Error("Supabase is not configured.");
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("User not authenticated.");
-
-  const { data, error } = await supabase
-    .from('chatbots')
-    .select('config')
-    .eq('id', chatbotId)
-    .eq('user_id', user.id) // RLS also enforces this, but it's good practice
-    .single();
-
-  if (error) {
-    console.error("Error fetching chatbot config:", error);
-    throw new Error(`Failed to load chatbot configuration: ${error.message}`);
-  }
-
-  if (!data || !data.config) {
-      throw new Error("Chatbot configuration not found.");
-  }
-
-  return data.config as ChatbotConfig;
-};
-
-
 // --- Admin Dashboard Data Functions ---
 
 // Helper to parse price string like '$29.99' to a number
@@ -358,7 +306,7 @@ const parsePrice = (price: string): number => {
     return parseFloat(price.replace(/[^0-9.-]+/g, ""));
 };
 
-export const getAdminDashboardStats = async (plans: Plan[]): Promise<AdminDashboardStats> => {
+export const getAdminDashboardStats = async (): Promise<AdminDashboardStats> => {
     if (!supabase) throw new Error("Supabase not initialized");
     
     // Fetch all data in parallel
@@ -383,7 +331,7 @@ export const getAdminDashboardStats = async (plans: Plan[]): Promise<AdminDashbo
 
         // Note: For a real app, status would come from Stripe webhook data
         if (status !== 'Suspended' && planName) {
-            const plan = plans.find(p => p.name === planName);
+            const plan = PLANS.find(p => p.name === planName);
             if (plan && plan.price !== '$0') {
                 return sum + parsePrice(plan.price);
             }
@@ -525,88 +473,4 @@ export const getPlanDistribution = async (): Promise<PlanDistribution> => {
     });
 
     return distribution;
-};
-
-// --- Plan Management Functions (Admin) ---
-
-export const getPlans = async (): Promise<PlansResponse> => {
-  if (!supabase) {
-    console.warn("Supabase not initialized. Falling back to default plans.");
-    return { plans: DEFAULT_PLANS, isDynamic: false };
-  }
-  
-  const { data, error } = await supabase
-    .from('plans')
-    .select('id, name, price, price_detail, features, cta, featured, sort_order')
-    .order('sort_order', { ascending: true });
-
-  if (error) {
-    // Check for "table not found" error more robustly by inspecting the error message.
-    // Supabase-js can return different error structures, so checking the message is safer.
-    const isTableNotFoundError = 
-        error.code === '42P01' || // PostgreSQL "undefined_table" code
-        error.message.includes("relation \"public.plans\" does not exist") || // Raw PostgREST error
-        error.message.includes("Could not find the table 'public.plans' in the schema cache"); // Supabase-js client error
-
-    if (isTableNotFoundError) {
-      console.warn("Could not find 'plans' table. Falling back to default plans. Please run the setup SQL in geminiService.ts to enable dynamic plan management.");
-      return { plans: DEFAULT_PLANS, isDynamic: false };
-    } else {
-      // For other errors (network, etc.), re-throw so they can be handled upstream.
-      console.error("Error fetching plans:", error);
-      throw new Error(`Failed to load plans: ${error.message}`);
-    }
-  }
-  
-  // Map snake_case from DB to camelCase for JS consistency
-  const plans = data.map(p => ({
-    id: p.id,
-    name: p.name,
-    price: p.price,
-    priceDetail: p.price_detail,
-    features: p.features,
-    cta: p.cta,
-    featured: p.featured,
-    sort_order: p.sort_order,
-  }));
-  
-  return { plans, isDynamic: true };
-};
-
-export const updatePlan = async (plan: Plan): Promise<Plan> => {
-  if (!supabase) throw new Error("Supabase not initialized");
-  // Map camelCase from JS to snake_case for DB
-  const { data, error } = await supabase
-    .from('plans')
-    .update({
-        name: plan.name,
-        price: plan.price,
-        price_detail: plan.priceDetail,
-        features: plan.features,
-        cta: plan.cta,
-        featured: plan.featured,
-        sort_order: plan.sort_order,
-    })
-    .eq('id', plan.id)
-    .select('id, name, price, price_detail, features, cta, featured, sort_order')
-    .single();
-  
-  if (error) {
-    console.error("Error updating plan:", error);
-    // Provide a more user-friendly error message
-    if (error.code === '42501') { // RLS violation
-        throw new Error("Permission denied. You must be an admin to update plans.");
-    }
-    throw new Error(`Failed to update plan: ${error.message}`);
-  }
-  return {
-    id: data.id,
-    name: data.name,
-    price: data.price,
-    priceDetail: data.price_detail,
-    features: data.features,
-    cta: data.cta,
-    featured: data.featured,
-    sort_order: data.sort_order,
-  };
 };

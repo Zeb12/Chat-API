@@ -43,20 +43,30 @@ export const StripeConnectGuide: React.FC<StripeConnectGuideProps> = ({ onBack }
                 <ul>
                     <li>Log in to your <a href="https://dashboard.stripe.com/" target="_blank" rel="noopener noreferrer">Stripe Dashboard</a>.</li>
                     <li>Go to the <strong>Products</strong> section and add a new product for your 'Basic' and 'Pro' plans.</li>
-                    <li>For each product, add a recurring price. This will generate a <strong>Price ID</strong> (e.g., <code>price_1S59...</code>). Set the 'Price nickname' to be the same as your plan name (e.g., "Basic", "Pro"). This is used to sync the plan name correctly.</li>
+                    <li>For each product, add a recurring price. This will generate a <strong>Price ID</strong> (e.g., <code>price_1S59...</code>).</li>
                     <li><strong>Crucially, you need the Price ID, not the Product ID.</strong> You'll use these IDs in the next step.</li>
                 </ul>
             </StepCard>
 
-            <StepCard step={2} title="Update Plan IDs in Supabase" icon={<ClipboardDocumentCheckIcon className="w-6 h-6" />}>
-                <p>Next, add the Price IDs you just created into your Supabase 'plans' table. This makes your pricing dynamic and manageable from the Admin Dashboard.</p>
-                <ul>
-                    <li>In your Supabase project, go to the <strong>Table Editor</strong> and select the <code>plans</code> table.</li>
-                    <li>Insert rows for your 'Basic' and 'Pro' plans if they don't exist.</li>
-                    <li>For the <code>id</code> column of each plan, paste the corresponding <strong>Price ID</strong> from Stripe.</li>
-                    <li>Fill out the other columns (name, price, features, etc.) to match your offerings.</li>
-                </ul>
-                <p className="!mt-2">If you haven't created the <code>plans</code> table yet, please run the setup SQL found in the comments of the <code>services/geminiService.ts</code> file.</p>
+            <StepCard step={2} title="Update Your Code" icon={<ClipboardDocumentCheckIcon className="w-6 h-6" />}>
+                <p>Open the <code>constants.ts</code> file in your project and replace the placeholder Price IDs with the ones you just created in Stripe.</p>
+                <CodeBlock language="typescript">{`// file: constants.ts
+
+export const PLANS: Plan[] = [
+  // ... Free plan
+  {
+    // ...
+    id: 'price_...', // <-- PASTE YOUR 'Basic' PRICE ID HERE
+    name: 'Basic',
+    // ...
+  },
+  {
+    // ...
+    id: 'price_...', // <-- PASTE YOUR 'Pro' PRICE ID HERE
+    name: 'Pro',
+    // ...
+  },
+];`}</CodeBlock>
             </StepCard>
             
             <StepCard step={3} title="Configure Supabase Secrets" icon={<CogIcon className="w-6 h-6" />}>
@@ -71,6 +81,7 @@ export const StripeConnectGuide: React.FC<StripeConnectGuideProps> = ({ onBack }
                 <h3 className="font-bold mt-4">B. Get Webhook Signing Secret</h3>
                 <ul>
                     <li>Go to <strong>Developers &gt; Webhooks</strong> and click 'Add endpoint'.</li>
+                    {/* FIX: Wrap the URL in a template literal to prevent JSX from interpreting `<` and `>` as tags. */}
                     <li>The endpoint URL should be: <code>{`https://<YOUR_PROJECT_REF>.supabase.co/functions/v1/stripe-webhooks`}</code></li>
                     <li>Listen for the following events: <code>customer.subscription.created</code>, <code>customer.subscription.updated</code>, and <code>customer.subscription.deleted</code>.</li>
                     <li>After creating the endpoint, reveal and copy the <strong>Signing secret</strong> (it starts with <code>whsec_...</code>).</li>
@@ -79,22 +90,24 @@ export const StripeConnectGuide: React.FC<StripeConnectGuideProps> = ({ onBack }
                 <h3 className="font-bold mt-4">C. Set Secrets in Supabase</h3>
                 <ul>
                     <li>Go to your Supabase Project Dashboard, then <strong>Project Settings &gt; Secrets</strong>.</li>
-                    <li>Add the following <strong>seven</strong> secrets. You can find your Supabase URL, Anon Key, and Service Role Key in your project's <strong>API Settings</strong>.</li>
+                    <li>Add the following <strong>six</strong> secrets. You can find your Supabase keys and URL in your project's <strong>API Settings</strong>.</li>
                 </ul>
-                <CodeBlock>{`SUPABASE_URL                    # Your project's URL
-SUPABASE_ANON_KEY               # Your project's "anon" public key
-SUPABASE_SERVICE_ROLE_KEY       # Your project's "service_role" key
-STRIPE_SECRET_KEY               # Value from step 3A
-STRIPE_WEBHOOK_SIGNING_SECRET   # Value from step 3B
-SITE_URL                        # The URL of your deployed application (e.g., https://myapp.com)
-ADMIN_EMAIL                     # The email address for the admin user`}</CodeBlock>
-                <p className="!mt-2"><strong>Important:</strong> <code>SITE_URL</code> is where Stripe redirects users after checkout. <code>ADMIN_EMAIL</code> is used to authorize actions in the Admin Dashboard.</p>
+                <CodeBlock>{`SITE_URL                        # Your final deployed website URL (e.g., https://myapp.com)
+STRIPE_SECRET_KEY               # From Stripe Developers > API keys (Secret key)
+STRIPE_WEBHOOK_SIGNING_SECRET   # From Stripe Developers > Webhooks (Signing secret)
+SUPABASE_URL                    # From Supabase API Settings (Project URL)
+SUPABASE_ANON_KEY               # From Supabase API Settings (Project API keys > anon public)
+SUPABASE_SERVICE_ROLE_KEY       # From Supabase API Settings (Project API keys > service_role secret)`}</CodeBlock>
+                <p className="!mt-2"><strong>Important:</strong> The <code>SUPABASE_SERVICE_ROLE_KEY</code> is required for the Stripe Webhook function to securely update user subscription data. The other keys are used by various parts of the application.</p>
             </StepCard>
             
             <StepCard step={4} title="Deploy Your Functions" icon={<TerminalIcon className="w-6 h-6" />}>
                 <p>For your Supabase functions to access the new secrets, you need to deploy them. Run the following commands from your project's root directory in your terminal:</p>
-                <CodeBlock>{`# Deploy all functions
-supabase functions deploy`}</CodeBlock>
+                <CodeBlock>{`# Deploy the checkout function
+supabase functions deploy create-checkout-session
+
+# Deploy the webhooks function (must disable JWT verification)
+supabase functions deploy stripe-webhooks --no-verify-jwt`}</CodeBlock>
                  <p className="!mt-4">After deploying, your Stripe integration should be fully configured and ready to test!</p>
             </StepCard>
 

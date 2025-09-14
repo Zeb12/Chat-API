@@ -9,8 +9,8 @@ export const ConfigurationNeeded: React.FC = () => {
 //    Project Settings > API
 
 // 2. Replace the placeholder values below:
-const supabaseUrl = 'https://iezxuhaxapklxuxybgci.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imllenh1aGF4YXBrbHh1eHliZ2NpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTczNTEzNDAsImV4cCI6MjA3MjkyNzM0MH0.iTPlc2IcZR1Fz_Og3czXRw4ngtW1PgjY1e9ldLPixxo';
+const supabaseUrl = 'YOUR_SUPABASE_URL';
+const supabaseAnonKey = 'YOUR_SUPABASE_ANON_KEY';
   `;
 
   return (

@@ -1,7 +1,6 @@
-
 import React from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { getDashboardStats, getChatbots, getChatbotConfig, generateChatbotScript, getPlans } from '../services/geminiService';
+import { getDashboardStats, getChatbots } from '../services/geminiService';
 import type { DashboardStats, ChatbotRecord, Plan } from '../types';
 import { BotIcon } from './icons/BotIcon';
 import { ChartBarIcon } from './icons/ChartBarIcon';
@@ -13,7 +12,7 @@ import { UpgradeIcon } from './icons/UpgradeIcon';
 import { EmptyState } from './EmptyState';
 import { ConversationChart } from './ConversationChart';
 import { CogIcon } from './icons/CogIcon';
-import { ChatbotPreviewModal } from './ChatbotPreviewModal';
+import { PLANS } from '../constants';
 
 interface DashboardProps {
   session: Session;
@@ -78,28 +77,35 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onNavigateToWizar
   const [chatbots, setChatbots] = React.useState<ChatbotRecord[] | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [showPricing, setShowPricing] = React.useState(false);
-  const [plans, setPlans] = React.useState<Plan[]>([]);
+  const [currentPlan, setCurrentPlan] = React.useState<Plan>(PLANS[0]);
   const SKELETON_COUNT = 3;
-
-  // State for preview modal
-  const [previewModalOpen, setPreviewModalOpen] = React.useState(false);
-  const [scriptForPreview, setScriptForPreview] = React.useState<string | null>(null);
-  const [botForPreview, setBotForPreview] = React.useState<ChatbotRecord | null>(null);
-  const [isLoadingScript, setIsLoadingScript] = React.useState<string | null>(null); // store bot ID
-  const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const [statsData, chatbotsData, plansResponse] = await Promise.all([
+        const [statsData, chatbotsData] = await Promise.all([
           getDashboardStats(),
           getChatbots(),
-          getPlans(),
         ]);
         setStats(statsData);
         setChatbots(chatbotsData);
-        setPlans(plansResponse.plans);
+
+        // Determine the user's current plan based on their session metadata
+        const userPlanId = session.user.user_metadata?.subscription_plan_id;
+        const userSubStatus = session.user.user_metadata?.subscription_status;
+
+        let activePlan = PLANS[0]; // Default to free plan
+
+        // Only check for paid plans if the subscription is active or trialing
+        if (userSubStatus === 'active' || userSubStatus === 'trialing') {
+            const subscribedPlan = PLANS.find(p => p.id === userPlanId);
+            if (subscribedPlan) {
+                activePlan = subscribedPlan;
+            }
+        }
+        setCurrentPlan(activePlan);
+
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error);
       } finally {
@@ -108,23 +114,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onNavigateToWizar
     };
 
     fetchData();
-  }, []);
-
-  const handleViewScript = async (bot: ChatbotRecord) => {
-    setIsLoadingScript(bot.id);
-    setError(null);
-    try {
-      const config = await getChatbotConfig(bot.id);
-      const script = await generateChatbotScript(config);
-      setScriptForPreview(script);
-      setBotForPreview(bot);
-      setPreviewModalOpen(true);
-    } catch (err: any) {
-      setError(err.message || "An unknown error occurred while preparing the preview.");
-    } finally {
-      setIsLoadingScript(null);
-    }
-  };
+  }, [session]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -144,7 +134,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onNavigateToWizar
   }
   
   const displayName = getDisplayName();
-  const currentPlan = "Free"; // Mocked plan for demonstration
+  
+  const hasReachedLimit = stats ? stats.totalChatbots >= currentPlan.maxChatbots : false;
 
   return (
     <div className="max-w-7xl mx-auto animate-fade-in space-y-8">
@@ -157,7 +148,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onNavigateToWizar
             <p className="text-gray-600 dark:text-gray-400 mt-1 flex items-center gap-x-2">
               Here's your dashboard.
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300 ring-1 ring-inset ring-green-600/20 dark:ring-green-500/30">
-                Plan: {currentPlan}
+                Plan: {currentPlan.name}
               </span>
             </p>
         </div>
@@ -171,23 +162,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onNavigateToWizar
              </button>
             <button
                 onClick={onNavigateToWizard}
-                className="w-1/2 sm:w-auto inline-flex items-center justify-center px-5 py-2.5 text-sm font-semibold text-white bg-primary border border-transparent rounded-lg shadow-sm hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                disabled={hasReachedLimit}
+                title={hasReachedLimit ? `You've reached the chatbot limit for the ${currentPlan.name} plan. Please upgrade to create more.` : 'Create a new chatbot'}
+                className="w-1/2 sm:w-auto inline-flex items-center justify-center px-5 py-2.5 text-sm font-semibold text-white bg-primary border border-transparent rounded-lg shadow-sm hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
             >
                 <PlusIcon className="w-5 h-5 mr-2 -ml-1" />
                 New Chatbot
             </button>
           </div>
       </div>
-      
-      {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 p-4 rounded-xl text-red-700 dark:text-red-300 mb-6 flex justify-between items-center" role="alert">
-          <div>
-            <p className="font-bold">Error</p>
-            <p className="text-sm">{error}</p>
-          </div>
-          <button onClick={() => setError(null)} className="font-bold underline text-sm p-2">Dismiss</button>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {isLoading ? (
@@ -243,22 +226,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onNavigateToWizar
                         </div>
                         
                         <div className="mt-4 border-t border-gray-200/80 dark:border-gray-700 pt-4 flex justify-end">
-                            <button 
-                                onClick={() => handleViewScript(bot)} 
-                                disabled={isLoadingScript === bot.id}
-                                className="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-70 disabled:cursor-wait"
-                            >
-                                {isLoadingScript === bot.id ? (
-                                    <>
-                                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
-                                        Loading...
-                                    </>
-                                ) : (
-                                    'View Script'
-                                )}
+                            <button className="px-4 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">
+                                View Script
                             </button>
                         </div>
                     </div>
@@ -271,20 +240,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onNavigateToWizar
       
       {showPricing && (
         <div className="animate-fade-in">
-          <Pricing plans={plans} onSubscribe={onSubscribe} isEmbedded={true} isLoading={isSubscribing} />
+          <Pricing onSubscribe={onSubscribe} isEmbedded={true} isLoading={isSubscribing} />
         </div>
-      )}
-      
-      {previewModalOpen && scriptForPreview && botForPreview && (
-        <ChatbotPreviewModal
-          script={scriptForPreview}
-          botName={botForPreview.name}
-          onClose={() => {
-            setPreviewModalOpen(false);
-            setScriptForPreview(null);
-            setBotForPreview(null);
-          }}
-        />
       )}
     </div>
   );

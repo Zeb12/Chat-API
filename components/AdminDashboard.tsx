@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import type { User } from '@supabase/supabase-js';
-import { getAdminDashboardStats, getAllUsers, getUserGrowthData, getPlanDistribution, updateUserRole, supabase, manageSubscription, getPlans, updatePlan } from '../services/geminiService';
-import type { AdminDashboardStats, UserRecord, UserGrowthDataPoint, PlanDistribution, Plan } from '../types';
+import { getAdminDashboardStats, getAllUsers, getUserGrowthData, getPlanDistribution, updateUserRole, supabase, manageSubscription } from '../services/geminiService';
+import type { AdminDashboardStats, UserRecord, UserGrowthDataPoint, PlanDistribution } from '../types';
 import { BotIcon } from './icons/BotIcon';
 import { ChatBubbleIcon } from './icons/ChatBubbleIcon';
 import { UsersIcon } from './icons/UsersIcon';
@@ -13,8 +12,8 @@ import { MoreVerticalIcon } from './icons/MoreVerticalIcon';
 import { Pagination } from './Pagination';
 import { CurrencyDollarIcon } from './icons/CurrencyDollarIcon';
 import { StripeIcon } from './icons/StripeIcon';
+import { PLANS } from '../constants';
 import { XIcon } from './icons/XIcon';
-import { PlanEditorModal } from './PlanEditorModal';
 
 const StatCard: React.FC<{ icon: React.ReactNode; title: string; value: string; }> = ({ icon, title, value }) => (
   <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-200/80 dark:border-gray-700 shadow-sm flex items-center space-x-4">
@@ -85,11 +84,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToStri
   const [allUsers, setAllUsers] = useState<UserRecord[]>([]);
   const [userGrowth, setUserGrowth] = useState<UserGrowthDataPoint[] | null>(null);
   const [planDistribution, setPlanDistribution] = useState<PlanDistribution | null>(null);
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [arePlansDynamic, setArePlansDynamic] = useState<boolean>(false);
   
-  const [isLoading, setIsLoading] = useState(true);
+  const [isStatsLoading, setIsStatsLoading] = useState(true);
   const [isUsersLoading, setIsUsersLoading] = useState(true);
+  const [isGrowthLoading, setIsGrowthLoading] = useState(true);
+  const [isPlanLoading, setIsPlanLoading] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -99,36 +98,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToStri
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // State for modals
-  const [modal, setModal] = useState<'changePlan' | 'cancelSub' | 'editPlan' | null>(null);
+  const [modal, setModal] = useState<'changePlan' | 'cancelSub' | null>(null);
   const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null);
-  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  
+  // State for the dismissible Stripe banner
+  const [showStripeBanner, setShowStripeBanner] = useState(false);
   
   const USERS_PER_PAGE = 5;
 
   const fetchAllData = async () => {
-      setIsLoading(true);
       setIsUsersLoading(true);
       try {
-          const [usersData, plansResponse, growthData, distributionData] = await Promise.all([
-              getAllUsers(),
-              getPlans(),
-              getUserGrowthData(),
-              getPlanDistribution(),
-          ]);
+          const usersData = await getAllUsers();
           setAllUsers(usersData);
-          setPlans(plansResponse.plans);
-          setArePlansDynamic(plansResponse.isDynamic);
-          setUserGrowth(growthData);
-          setPlanDistribution(distributionData);
-
-          const statsData = await getAdminDashboardStats(plansResponse.plans);
-          setStats(statsData);
-
       } catch (error) {
-          console.error("Failed to fetch admin data:", error);
-          setUpdateError("Failed to load dashboard data. Please refresh.");
+          console.error("Failed to fetch all users:", error);
+          setUpdateError("Failed to load user data. Please refresh.");
       } finally {
-          setIsLoading(false);
           setIsUsersLoading(false);
       }
   };
@@ -141,9 +127,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToStri
         }
     };
     getCurrentUser();
-    fetchAllData();
+
+    const fetchDashboardData = () => {
+      setIsStatsLoading(true);
+      getAdminDashboardStats().then(setStats).catch(err => console.error("Failed to fetch admin stats", err)).finally(() => setIsStatsLoading(false));
+      
+      setIsGrowthLoading(true);
+      getUserGrowthData().then(setUserGrowth).catch(err => console.error("Failed to fetch user growth", err)).finally(() => setIsGrowthLoading(false));
+
+      setIsPlanLoading(true);
+      getPlanDistribution().then(setPlanDistribution).catch(err => console.error("Failed to fetch plan distribution", err)).finally(() => setIsPlanLoading(false));
+      
+      fetchAllData();
+    };
+
+    fetchDashboardData();
+
+    // Check if the Stripe banner has been dismissed previously.
+    if (localStorage.getItem('stripeBannerDismissed') !== 'true') {
+        setShowStripeBanner(true);
+    }
   }, []);
   
+  const handleDismissStripeBanner = () => {
+    setShowStripeBanner(false);
+    try {
+      localStorage.setItem('stripeBannerDismissed', 'true');
+    } catch (e) {
+      console.error("Failed to write to localStorage:", e);
+    }
+  };
+
   const handleRoleChange = async (userId: string, newRole: 'User' | 'Admin') => {
     setUpdateError(null);
     setActiveMenu(null);
@@ -171,6 +185,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToStri
 
     try {
         await manageSubscription(selectedUser.id, 'change', newPriceId);
+        // Data will be updated via webhook, but we can refetch for quicker UI update
         await fetchAllData();
     } catch (error: any) {
         console.error("Failed to change subscription:", error);
@@ -197,27 +212,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToStri
     }
   };
 
-  const handlePlanUpdate = async (updatedPlan: Plan) => {
-    setUpdateError(null);
-    try {
-        await updatePlan(updatedPlan);
-        setModal(null);
-        // Refetch plans to update UI
-        setPlans(prevPlans => prevPlans.map(p => p.id === updatedPlan.id ? updatedPlan : p));
-    } catch (error: any) {
-        console.error("Failed to update plan:", error);
-        setUpdateError(error.message);
-        // Re-throw to keep the modal open and show error
-        throw error;
-    }
-  };
-
-  const openModal = (type: 'changePlan' | 'cancelSub' | 'editPlan', data: UserRecord | Plan) => {
-      if (type === 'editPlan') {
-        setSelectedPlan(data as Plan);
-      } else {
-        setSelectedUser(data as UserRecord);
-      }
+  const openModal = (type: 'changePlan' | 'cancelSub', user: UserRecord) => {
+      setSelectedUser(user);
       setModal(type);
       setActiveMenu(null);
   };
@@ -239,38 +235,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToStri
     <div className="max-w-7xl mx-auto animate-fade-in space-y-8">
       <h1 className="text-4xl font-bold text-gray-900 dark:text-white">Admin Dashboard</h1>
 
-       {!arePlansDynamic && !isLoading && (
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-500/30 p-6 rounded-2xl">
-          <h2 className="text-xl font-bold text-yellow-900 dark:text-yellow-100">Dynamic Plans Disabled</h2>
-          <p className="text-yellow-700 dark:text-yellow-300 mt-1">
-            The application is using fallback pricing data. To enable editing plans from this dashboard, you need to create the 'plans' table in your database.
-          </p>
-          <p className="text-yellow-700 dark:text-yellow-300 mt-2 text-sm">
-            Please run the SQL script found in the comments of the <code>services/geminiService.ts</code> file in your Supabase SQL Editor.
-          </p>
+      {showStripeBanner && (
+        <div className="relative bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-500/30 p-6 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-fade-in">
+            <div className='flex-grow'>
+                <h2 className="text-xl font-bold text-blue-900 dark:text-blue-100 flex items-center gap-2">
+                    <StripeIcon className="w-6 h-6" />
+                    Accept Payments with Stripe
+                </h2>
+                <p className="text-blue-700 dark:text-blue-300 mt-1 max-w-2xl">
+                    Follow our step-by-step guide to connect your Stripe account, create subscription plans, and enable checkout.
+                </p>
+            </div>
+            <button
+                onClick={onNavigateToStripeConnect}
+                className="bg-blue-600 text-white font-semibold px-5 py-2.5 rounded-lg shadow-sm hover:bg-blue-700 transition-colors flex-shrink-0 w-full sm:w-auto mt-4 sm:mt-0"
+            >
+                View Setup Guide
+            </button>
+            <button
+                onClick={handleDismissStripeBanner}
+                className="absolute top-3 right-3 p-1.5 text-blue-600/70 dark:text-blue-300/70 hover:text-blue-800 dark:hover:text-blue-100 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded-full transition-colors"
+                aria-label="Dismiss setup guide"
+            >
+                <XIcon className="w-5 h-5" />
+            </button>
         </div>
       )}
 
-      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-500/30 p-6 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div>
-              <h2 className="text-xl font-bold text-blue-900 dark:text-blue-100 flex items-center gap-2">
-                  <StripeIcon className="w-6 h-6" />
-                  Accept Payments with Stripe
-              </h2>
-              <p className="text-blue-700 dark:text-blue-300 mt-1 max-w-2xl">
-                  Follow our step-by-step guide to connect your Stripe account, create subscription plans, and enable checkout.
-              </p>
-          </div>
-          <button
-              onClick={onNavigateToStripeConnect}
-              className="bg-blue-600 text-white font-semibold px-5 py-2.5 rounded-lg shadow-sm hover:bg-blue-700 transition-colors flex-shrink-0 w-full sm:w-auto"
-          >
-              View Setup Guide
-          </button>
-      </div>
-
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {isLoading ? (
+        {isStatsLoading ? (
           <>
             <SkeletonStatCard /><SkeletonStatCard /><SkeletonStatCard /><SkeletonStatCard />
           </>
@@ -286,7 +279,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToStri
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
         <div className="lg:col-span-3">
-          {isLoading ? <SkeletonChart /> : userGrowth && (
+          {isGrowthLoading ? <SkeletonChart /> : userGrowth && (
             <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-200/80 dark:border-gray-700 shadow-sm">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">New Users (Last 7 Days)</h2>
                 <BarChart data={userGrowth} />
@@ -294,7 +287,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToStri
           )}
         </div>
         <div className="lg:col-span-2">
-           {isLoading ? <SkeletonChart /> : planDistribution && (
+           {isPlanLoading ? <SkeletonChart /> : planDistribution && (
              <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-200/80 dark:border-gray-700 shadow-sm h-full">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Plan Distribution</h2>
                 <DonutChart data={planDistribution} />
@@ -302,37 +295,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToStri
            )}
         </div>
       </div>
-      
-       {/* Site Management Section */}
-      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200/80 dark:border-gray-700 shadow-sm">
-        <div className="p-6">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Site Management: Pricing Plans</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Edit the subscription plans that appear on your website's pricing page.</p>
-        </div>
-        <div className="divide-y divide-gray-200 dark:divide-gray-700">
-          {isLoading ? (
-            <div className="p-6 text-center text-gray-500">Loading plans...</div>
-          ) : (
-            plans.map(plan => (
-              <div key={plan.id} className="p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div>
-                  <h3 className="font-bold text-lg text-gray-900 dark:text-white">{plan.name} {plan.featured && <span className="text-xs font-medium text-primary bg-violet-100 dark:bg-violet-900/50 px-2 py-1 rounded-full ml-2">Featured</span>}</h3>
-                  <p className="text-gray-600 dark:text-gray-400">{plan.price} {plan.priceDetail}</p>
-                </div>
-                <button 
-                  onClick={() => openModal('editPlan', plan)}
-                  disabled={!arePlansDynamic}
-                  title={!arePlansDynamic ? "Database 'plans' table not found. See warning above." : "Edit Plan"}
-                  className="px-4 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Edit Plan
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
 
       <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200/80 dark:border-gray-700 shadow-sm">
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
@@ -417,22 +379,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToStri
 
       {/* Modals */}
       {modal === 'changePlan' && selectedUser && (
-        <ChangePlanModal user={selectedUser} plans={plans} onConfirm={handleSubscriptionChange} onClose={() => setModal(null)} />
+        <ChangePlanModal user={selectedUser} onConfirm={handleSubscriptionChange} onClose={() => setModal(null)} />
       )}
       {modal === 'cancelSub' && selectedUser && (
         <CancelSubscriptionModal user={selectedUser} onConfirm={handleSubscriptionCancel} onClose={() => setModal(null)} />
-      )}
-      {modal === 'editPlan' && selectedPlan && (
-        <PlanEditorModal plan={selectedPlan} onSave={handlePlanUpdate} onClose={() => setModal(null)} />
       )}
     </div>
   );
 };
 
 // Modal Components
-const ChangePlanModal: React.FC<{ user: UserRecord; plans: Plan[]; onConfirm: (newPriceId: string) => void; onClose: () => void; }> = ({ user, plans, onConfirm, onClose }) => {
+const ChangePlanModal: React.FC<{ user: UserRecord; onConfirm: (newPriceId: string) => void; onClose: () => void; }> = ({ user, onConfirm, onClose }) => {
     const [selectedPriceId, setSelectedPriceId] = useState('');
-    const availablePlans = plans.filter(p => p.id !== 'free' && p.name !== user.plan);
+    const availablePlans = PLANS.filter(p => p.id !== 'free' && p.name !== user.plan);
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 animate-fade-in" role="dialog" aria-modal="true">
@@ -474,31 +433,16 @@ const CancelSubscriptionModal: React.FC<{ user: UserRecord; onConfirm: () => voi
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 animate-fade-in" role="dialog" aria-modal="true">
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 sm:p-8 max-w-md w-full m-4 text-center transform transition-all animate-slide-up">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/50">
-              <svg className="h-6 w-6 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-              </svg>
+                <svg className="h-6 w-6 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>
             </div>
-            <h3 id="confirmation-dialog-title" className="text-2xl font-bold text-gray-900 dark:text-white mt-4">
-              Cancel Subscription?
-            </h3>
+            <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-4">Cancel Subscription?</h3>
             <p className="mt-2 text-gray-600 dark:text-gray-400">
-                Are you sure you want to cancel the subscription for <span className="font-semibold">{user.email}</span>? This action will set the subscription to cancel at the end of the current billing period and cannot be undone through this interface.
+                Are you sure you want to cancel the <span className="font-semibold">{user.plan}</span> plan for <span className="font-semibold">{user.email}</span>?
+                The subscription will remain active until the end of the current billing period on <span className="font-semibold">{user.renewalDate}</span>.
             </p>
             <div className="mt-6 flex justify-center gap-x-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-6 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-light"
-              >
-                No, Keep Active
-              </button>
-              <button
-                type="button"
-                onClick={onConfirm}
-                className="px-6 py-2.5 text-sm font-semibold text-white bg-red-600 border border-transparent rounded-lg shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-              >
-                Yes, Cancel Subscription
-              </button>
+                <button type="button" onClick={onClose} className="px-6 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600">No, keep it</button>
+                <button type="button" onClick={onConfirm} className="px-6 py-2.5 text-sm font-semibold text-white bg-red-600 rounded-lg shadow-sm hover:bg-red-700">Yes, cancel</button>
             </div>
         </div>
     </div>

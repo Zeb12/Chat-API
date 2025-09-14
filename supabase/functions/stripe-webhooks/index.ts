@@ -1,5 +1,3 @@
-// supabase/functions/stripe-webhooks/index.ts
-
 // This function handles Stripe webhooks to keep user subscription data in sync.
 //
 // Required Environment Variables:
@@ -31,118 +29,117 @@ import { corsHeaders } from '../_shared/cors.ts';
 // This function updates the user's metadata in Supabase Auth.
 const updateUserSubscription = async (supabaseAdmin: SupabaseClient, subscription: Stripe.Subscription) => {
   const customerId = subscription.customer as string;
-  
-  // Use the price's nickname from Stripe to identify the plan (e.g., 'Basic', 'Pro').
-  // This is a reliable way to sync plan names.
-  const planName = subscription.items.data[0]?.price?.nickname || null;
+  const planId = subscription.items.data[0].price.id;
   const status = subscription.status;
-  
-  // Stripe sends current_period_end as a UNIX timestamp (seconds since epoch).
+  // Stripe sends current_period_end as a UNIX timestamp (seconds since epoch)
   const renewalDate = subscription.current_period_end;
-  const isCanceledAtPeriodEnd = subscription.cancel_at_period_end;
-  
-  // Determine the unified subscription status.
-  const subscriptionStatus = isCanceledAtPeriodEnd || status === 'canceled' ? 'canceled' : status;
 
   // Find the Supabase user associated with this Stripe customer ID.
   const { data: userData, error: userError } = await supabaseAdmin
-    .from('users') // Correctly queries the 'auth.users' table
+    .from('users') // This correctly queries the 'auth.users' table
     .select('id, raw_user_meta_data')
     .eq('raw_user_meta_data->>stripe_customer_id', customerId)
     .single();
 
-  if (userError) throw userError;
-  if (!userData) {
-    console.warn(`Webhook Error: User with Stripe customer ID ${customerId} not found.`);
-    // Return successfully so Stripe doesn't retry for a user that doesn't exist.
+  if (userError || !userData) {
+    console.error(`User not found for Stripe customer ID: ${customerId}`, userError);
+    // Return a 200 to Stripe even if the user isn't found to prevent retries for non-existent users.
     return;
   }
   
   const userId = userData.id;
-  const currentMetaData = userData.raw_user_meta_data || {};
-  
-  // Prepare the metadata to be updated, preserving existing data.
-  const newMetaData = {
-    ...currentMetaData,
-    plan: planName || currentMetaData.plan || 'Free', // Fallback to existing or free
-    subscription_status: subscriptionStatus,
-    subscription_renewal_date: renewalDate,
-  };
-  
-  // If a subscription is fully deleted (not just set to cancel), revert the user to a free plan.
-  if (status === 'canceled') {
-      newMetaData.plan = 'Free';
-      delete newMetaData.subscription_renewal_date; // No renewal date for a canceled plan
-  }
+  const existingMetadata = userData.raw_user_meta_data || {};
 
-  // Update the user's metadata in Supabase Auth.
+  // Update the user's metadata with the new subscription details.
   const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
     userId,
-    { user_metadata: newMetaData }
+    {
+      user_metadata: {
+        ...existingMetadata,
+        subscription_plan_id: planId,
+        subscription_status: status,
+        subscription_renewal_date: renewalDate,
+      },
+    }
   );
 
-  if (updateError) throw updateError;
-  
-  console.log(`Successfully updated subscription for user ${userId} to status: ${subscriptionStatus}`);
+  if (updateError) {
+    console.error(`Failed to update user ${userId}:`, updateError);
+    throw updateError;
+  }
+
+  console.log(`Successfully updated subscription for user ${userId} to plan ${planId} with status ${status}.`);
 };
 
-// The main server function that handles incoming webhook requests.
 serve(async (req) => {
+  // Handle preflight CORS requests.
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
   try {
+    // FIX: Move all client initializations and env var checks inside the handler.
+    // This is a critical change to prevent the function from crashing on startup
+    // if environment variables are missing. A startup crash is a common cause of
+    // CORS errors because the function can't respond to the preflight OPTIONS request.
+    const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
+    const signingSecret = Deno.env.get('STRIPE_WEBHOOK_SIGNING_SECRET');
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
-    const stripeSigningSecret = Deno.env.get('STRIPE_WEBHOOK_SIGNING_SECRET');
 
-    if (!supabaseUrl || !supabaseServiceRoleKey || !stripeSecretKey || !stripeSigningSecret) {
-        throw new Error("Server configuration error: Missing required environment variables for Stripe webhooks.");
+    if (!stripeSecretKey || !signingSecret || !supabaseUrl || !supabaseServiceRoleKey) {
+      console.error("Webhook configuration error: Missing required environment variables.");
+      throw new Error("Webhook server is not configured correctly.");
     }
-
+    
     const stripe = new Stripe(stripeSecretKey, {
       httpClient: Stripe.createFetchHttpClient(),
       apiVersion: '2024-06-20',
     });
-    
-    // Create a Supabase admin client to perform privileged operations.
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
 
-    const signature = req.headers.get('stripe-signature');
-    if (!signature) {
-      throw new Error("Missing 'stripe-signature' header.");
-    }
-    
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+      db: { schema: 'auth' },
+    });
+
+    const signature = req.headers.get('Stripe-Signature');
     const body = await req.text();
+
+    if (!signature) {
+      throw new Error('Missing Stripe-Signature header.');
+    }
+
     // Verify the webhook signature to ensure the request is from Stripe.
     const event = await stripe.webhooks.constructEventAsync(
       body,
       signature,
-      stripeSigningSecret,
+      signingSecret,
       undefined,
       Stripe.createSubtleCryptoProvider()
     );
 
-    // Handle the specific webhook event.
+    // Handle the specific webhook event types.
     switch (event.type) {
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted':
-        await updateUserSubscription(supabaseAdmin, event.data.object as Stripe.Subscription);
+        const subscription = event.data.object as Stripe.Subscription;
+        await updateUserSubscription(supabaseAdmin, subscription);
         break;
       default:
         console.log(`Unhandled event type: ${event.type}`);
     }
 
-    // Return a 200 OK response to Stripe to acknowledge receipt.
+    // Acknowledge receipt of the event to Stripe.
     return new Response(JSON.stringify({ received: true }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
-
   } catch (error) {
-    console.error('Stripe webhook error:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error('Webhook Error:', error.message);
+    return new Response(JSON.stringify({ error: `Webhook error: ${error.message}` }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400, // Use 400 for bad requests (e.g., invalid signature)
+      status: 400, // Bad Request for signature errors
     });
   }
 });

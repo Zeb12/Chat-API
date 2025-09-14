@@ -1,6 +1,6 @@
 import { Personality, Plan } from './types';
 
-export const PERSONALITY_DETAILS: { type: Personality; description:string }[] = [
+export const PERSONALITY_DETAILS: { type: Personality; description: string }[] = [
   {
     type: Personality.Friendly,
     description: 'A conversational and approachable tone. Good for general customer service.',
@@ -19,13 +19,7 @@ export const PERSONALITY_DETAILS: { type: Personality; description:string }[] = 
   },
 ];
 
-/*
-IMPORTANT: The data below is used as a fallback if the 'plans' table
-is not found in the database. For full functionality, including the ability
-for admins to edit plans, you must create the 'plans' table in Supabase.
-See setup instructions in 'services/geminiService.ts'.
-*/
-export const DEFAULT_PLANS: Plan[] = [
+export const PLANS: Plan[] = [
   {
     id: 'free', // A special identifier for the free plan
     name: 'Free',
@@ -38,9 +32,15 @@ export const DEFAULT_PLANS: Plan[] = [
       '1,000 messages/month',
     ],
     cta: 'Get Started',
+    maxChatbots: 1,
   },
   {
-    id: 'REPLACE_WITH_YOUR_STRIPE_BASIC_PRICE_ID', // <-- REPLACE THIS with your Stripe Price ID
+    // IMPORTANT: This is a Stripe PRODUCT ID. You must replace it with a PRICE ID.
+    // HOW TO FIX:
+    // 1. In your Stripe Dashboard, go to Products and click on your "Basic" plan.
+    // 2. Under the "Pricing" section, copy the Price ID (it starts with 'price_...').
+    // 3. Paste the Price ID below, replacing the 'prod_...' value.
+    id: 'price_1S61NBPE0RhZFcxKnhMVwnqx', // <-- REPLACE THIS with your Stripe Price ID
     name: 'Basic',
     price: '$10',
     priceDetail: 'per month',
@@ -52,9 +52,15 @@ export const DEFAULT_PLANS: Plan[] = [
       'Email Support',
     ],
     cta: 'Choose Basic',
+    maxChatbots: 5,
   },
   {
-    id: 'REPLACE_WITH_YOUR_STRIPE_PRO_PRICE_ID', // <-- REPLACE THIS with your Stripe Price ID
+    // IMPORTANT: This is a Stripe PRODUCT ID. You must replace it with a PRICE ID.
+    // HOW TO FIX:
+    // 1. In your Stripe Dashboard, go to Products and click on your "Pro" plan.
+    // 2. Under the "Pricing" section, copy the Price ID (it starts with 'price_...').
+    // 3. Paste the Price ID below, replacing the 'prod_...' value.
+    id: 'price_1S61OUPE0RhZFcxKEPmQDlLE', // <-- REPLACE THIS with your Stripe Price ID
     name: 'Pro',
     price: '$29.99',
     priceDetail: 'per month',
@@ -68,5 +74,6 @@ export const DEFAULT_PLANS: Plan[] = [
     ],
     cta: 'Choose Pro',
     featured: true,
+    maxChatbots: Infinity,
   },
 ];

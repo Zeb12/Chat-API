@@ -24,8 +24,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.44.4';
 import Stripe from 'https://esm.sh/stripe@16.2.0?target=deno';
 import { corsHeaders } from '../_shared/cors.ts';
 
-const ADMIN_EMAIL = Deno.env.get('ADMIN_EMAIL');
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -55,9 +53,7 @@ serve(async (req) => {
     }
 
     // 2. Authorize: Check if the calling user is an admin.
-    const isAdmin = callingUser.user_metadata?.role === 'Admin' || callingUser.email === ADMIN_EMAIL;
-    
-    if (!isAdmin) {
+    if (callingUser.user_metadata?.role !== 'Admin') {
       return new Response(JSON.stringify({ error: 'Permission denied. You are not an admin.' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -87,12 +83,12 @@ serve(async (req) => {
     // Find the user's active subscription in Stripe
     const subscriptions = await stripe.subscriptions.list({
         customer: stripeCustomerId,
-        status: 'all', 
+        status: 'all', // Fetch active, trialing, etc. but not canceled ones by default
         limit: 1,
     });
     const subscription = subscriptions.data.find(s => s.status !== 'canceled');
     if (!subscription) {
-        throw new Error(`No active or trialing subscription found for user ${userId}.`);
+        throw new Error(`No active subscription found for user ${userId}.`);
     }
 
     // 4. Perform the requested action

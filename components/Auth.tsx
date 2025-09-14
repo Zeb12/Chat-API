@@ -3,6 +3,13 @@ import { supabase } from '../services/geminiService';
 import { BotIcon } from './icons/BotIcon';
 import { CheckCircleIcon } from './icons/CheckCircleIcon';
 
+const CONFIG_ERROR_MESSAGE = "Authentication failed due to an invalid Supabase API key or URL. This is a configuration issue.\n\n" +
+  "Please double-check these in your 'services/geminiService.ts' file:\n" +
+  "1. Is `supabaseUrl` exactly correct?\n" +
+  "2. Is `supabaseAnonKey` the correct `anon` public key?\n\n" +
+  "You can find these values in your Supabase project dashboard under Project Settings > API.";
+
+
 const SocialButton: React.FC<{ provider: 'google' | 'github'; children: React.ReactNode; onError: (message: string) => void }> = ({ provider, children, onError }) => {
   const handleLogin = async () => {
     // Clear previous errors before attempting to sign in
@@ -16,7 +23,11 @@ const SocialButton: React.FC<{ provider: 'google' | 'github'; children: React.Re
     });
     if (error) {
       console.error(`Error logging in with ${provider}:`, error);
-      onError(error.message);
+      if (error.message.includes('Invalid API key')) {
+        onError(CONFIG_ERROR_MESSAGE);
+      } else {
+        onError(error.message);
+      }
     }
   };
 
@@ -41,6 +52,7 @@ export const Auth: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [confirmationMessage, setConfirmationMessage] = useState({ title: '', body: '' });
   const [passwordStrength, setPasswordStrength] = useState({ score: 0, label: '' });
+  const [showResend, setShowResend] = useState(false);
 
   const strengthColors = {
     0: { text: 'text-gray-500', bg: 'bg-gray-200 dark:bg-gray-600' },
@@ -62,7 +74,7 @@ export const Auth: React.FC = () => {
       length: password.length >= 8,
       lowercase: /[a-z]/.test(password),
       uppercase: /[A-Z]/.test(password),
-      number: /\d/.test(password),
+      number: /\d]/.test(password),
       specialChar: /[!@#$%^&*(),.?":{}|<>]/.test(password),
     };
   
@@ -103,6 +115,7 @@ export const Auth: React.FC = () => {
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setShowResend(false);
     setIsLoading(true);
 
     if (authMode === 'signUp') {
@@ -116,7 +129,11 @@ export const Auth: React.FC = () => {
         }
       });
       if (error) {
-        setError(error.message);
+        if (error.message.includes('Invalid API key')) {
+            setError(CONFIG_ERROR_MESSAGE);
+        } else {
+            setError(error.message);
+        }
       } else {
         setConfirmationMessage({
           title: 'Confirm your email',
@@ -127,9 +144,44 @@ export const Auth: React.FC = () => {
     } else { // 'signIn'
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
-        setError(error.message);
+        if (error.message.includes('Invalid API key')) {
+            setError(CONFIG_ERROR_MESSAGE);
+        } else if (error.message.includes('Email not confirmed')) {
+          setError("Your email address has not been confirmed. Please check your inbox for the confirmation link.");
+          setShowResend(true);
+        } else if (error.message.includes('Invalid login credentials')) {
+          setError("Invalid login credentials. Please check your email and password, or try resetting your password.");
+        } else {
+          setError(error.message);
+        }
       }
       // onAuthStateChange in App.tsx will handle successful sign-in
+    }
+    setIsLoading(false);
+  };
+
+  const handleResendConfirmation = async () => {
+    setIsLoading(true);
+    setError(null);
+    setShowResend(false);
+    
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: email,
+    });
+    
+    if (error) {
+        if (error.message.includes('Invalid API key')) {
+            setError(CONFIG_ERROR_MESSAGE);
+        } else {
+            setError(error.message);
+        }
+    } else {
+      setConfirmationMessage({
+        title: 'Confirmation Sent',
+        body: `A new confirmation link has been sent to ${email}.\nPlease check your inbox to complete your registration.`
+      });
+      setAuthMode('confirmation');
     }
     setIsLoading(false);
   };
@@ -142,7 +194,11 @@ export const Auth: React.FC = () => {
       // Supabase uses the Site URL from your project's auth settings for the redirect.
     });
     if (error) {
-        setError(error.message);
+        if (error.message.includes('Invalid API key')) {
+            setError(CONFIG_ERROR_MESSAGE);
+        } else {
+            setError(error.message);
+        }
     } else {
         setConfirmationMessage({
             title: 'Check your email',
@@ -156,6 +212,7 @@ export const Auth: React.FC = () => {
   const switchMode = (mode: AuthMode) => {
     setAuthMode(mode);
     setError(null);
+    setShowResend(false);
     setFullName('');
     // Keep email if switching between signin and forgot password
     if (mode === 'signUp') {
@@ -191,7 +248,7 @@ export const Auth: React.FC = () => {
         {error && (
           <div className="mb-6 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-500/50 text-red-700 dark:text-red-300 rounded-lg text-left" role="alert">
             <p className="font-bold">Error</p>
-            <p className="text-sm">{error}</p>
+            <p className="text-sm whitespace-pre-wrap">{error}</p>
           </div>
         )}
 
@@ -249,7 +306,18 @@ export const Auth: React.FC = () => {
       {error && (
         <div className="mb-6 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-500/50 text-red-700 dark:text-red-300 rounded-lg text-left" role="alert">
           <p className="font-bold">Authentication Error</p>
-          <p className="text-sm">{error}</p>
+          <p className="text-sm whitespace-pre-wrap">{error}</p>
+           {showResend && (
+            <div className="mt-2 pt-2 border-t border-red-300 dark:border-red-500/30">
+              <button
+                onClick={handleResendConfirmation}
+                disabled={isLoading}
+                className="w-full text-left text-sm font-semibold text-primary hover:text-primary-dark disabled:opacity-50 disabled:cursor-wait"
+              >
+                Resend confirmation email &rarr;
+              </button>
+            </div>
+          )}
           {error.toLowerCase().includes("provider") && (
              <div className="text-sm mt-2 border-t border-red-300 dark:border-red-500/30 pt-2">
                 <p className="font-semibold">How to fix this:</p>
@@ -335,7 +403,7 @@ export const Auth: React.FC = () => {
                 <button
                     type="button"
                     onClick={() => switchMode('forgotPassword')}
-                    className="font-semibold text-primary hover:text-primary-dark focus:outline-none"
+                    className="font-semibold text-primary hover:text-primary-dark focus:outline-none text-sm p-1 -m-1 rounded-md"
                 >
                     Forgot your password?
                 </button>
