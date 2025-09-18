@@ -32,7 +32,7 @@ export const PrivacyPolicy: React.FC<LegalPageProps> = ({ onBack }) => {
         <p>You have the right to access, update, or delete your personal information. You can manage your account settings or contact us directly for assistance with your data.</p>
 
         <h2>5. Contact Us</h2>
-        <p>If you have any questions about this Privacy Policy, please contact us at privacy@chatbotpro.example.com.</p>
+        <p>If you have any questions about this Privacy Policy, please contact us at privacy@chatbotstudio.example.com.</p>
       </div>
       <div className="mt-8 pt-5 border-t border-gray-200 dark:border-gray-700 flex justify-start">
         <button

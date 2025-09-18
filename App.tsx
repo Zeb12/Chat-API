@@ -2,7 +2,6 @@ import React, { useState, useCallback, useEffect } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
-import { ChatbotWizard } from './components/ChatbotWizard';
 import { CodeSnippet } from './components/CodeSnippet';
 import { Auth as AuthComponent } from './components/Auth';
 import { Features } from './components/Features';
@@ -20,7 +19,8 @@ import { useDarkMode } from './hooks/useDarkMode';
 import { Footer } from './components/Footer';
 import { TermsOfService } from './components/TermsOfService';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
-import { StripeConnectGuide } from './components/StripeConnectGuide';
+import { PaymentSuccess } from './components/PaymentSuccess';
+import { WizardModal } from './components/WizardModal';
 
 const App: React.FC = () => {
   const [theme, toggleTheme] = useDarkMode();
@@ -48,6 +48,11 @@ const App: React.FC = () => {
   const [generatedScript, setGeneratedScript] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [pendingSubscriptionPlanId, setPendingSubscriptionPlanId] = useState<string | null>(null);
+  const [isWizardModalOpen, setWizardModalOpen] = useState(false);
+  const [initialAuthMode, setInitialAuthMode] = useState<'signIn' | 'signUp'>('signIn');
+  
+  const openWizardModal = useCallback(() => setWizardModalOpen(true), []);
+  const closeWizardModal = useCallback(() => setWizardModalOpen(false), []);
   
   // Create a centralized navigation function that scrolls to the top on state change.
   // This resolves an issue where navigating from a scrolled position (like the pricing section)
@@ -56,6 +61,16 @@ const App: React.FC = () => {
     setAppState(state);
     window.scrollTo(0, 0);
   }, []);
+
+  // Check for Stripe success redirect on initial load.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('session_id')) {
+      navigateTo('payment-success');
+      // Clean the URL to avoid showing the success page on refresh or navigation.
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [navigateTo]);
 
   useEffect(() => {
     // FIX: Add a guard to ensure supabase is initialized before using it.
@@ -71,7 +86,7 @@ const App: React.FC = () => {
     // This is more reliable than using getSession() and onAuthStateChange separately.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      const isAdminUser = session?.user?.user_metadata?.role === 'Admin';
+      const isAdminUser = session?.user?.email === 'zebsnellenbarger60@gmail.com';
       setIsAdmin(isAdminUser);
       
       // Stop loading after the initial session is processed.
@@ -102,25 +117,28 @@ const App: React.FC = () => {
         // When signed out, always return to the landing page.
         navigateTo('landing');
       } else if (_event === 'INITIAL_SESSION') {
-        // On page load, if a session is found, navigate to the dashboard.
-        // If no session, the user stays on the landing page (the default state).
-        if (session) {
+        // On page load, if a session is found and we are on the landing page,
+        // navigate to the appropriate dashboard. This prevents a redirect loop
+        // when navigating between authenticated pages like admin and dashboard.
+        if (session && appState === 'landing') {
           navigateTo(isAdminUser ? 'admin' : 'dashboard');
         }
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [navigateTo, pendingSubscriptionPlanId]);
+  }, [navigateTo, pendingSubscriptionPlanId, appState]);
+
+  const navigateHome = () => {
+    navigateTo(session ? (isAdmin ? 'admin' : 'dashboard') : 'landing');
+  };
 
   const handleStart = () => {
     if (session) {
-      navigateTo('wizard');
+      navigateHome();
     } else {
-      const pricingElement = document.getElementById('pricing');
-      if (pricingElement) {
-          pricingElement.scrollIntoView({ behavior: 'smooth' });
-      }
+      setInitialAuthMode('signUp');
+      navigateTo('auth');
     }
   };
 
@@ -140,24 +158,21 @@ const App: React.FC = () => {
     if (!session) {
       // If the user isn't logged in, remember which plan they wanted to buy
       // and then redirect them to the authentication page.
+      setInitialAuthMode('signUp');
       setPendingSubscriptionPlanId(planId);
       navigateTo('auth');
       return;
     }
   
-    if (planId === 'free') {
-      navigateTo('wizard');
-    } else {
-      setIsLoading(true);
-      setError(null);
-      setStripeError(null);
-      try {
-        await redirectToCheckout(planId);
-        // On success, the user is redirected to Stripe, so we don't need to set loading to false here.
-      } catch (err: any) {
-        setStripeError(err.message || 'An unknown error occurred while initiating checkout.');
-        setIsLoading(false); // Set loading to false only on error
-      }
+    setIsLoading(true);
+    setError(null);
+    setStripeError(null);
+    try {
+      await redirectToCheckout(planId);
+      // On success, the user is redirected to Stripe, so we don't need to set loading to false here.
+    } catch (err: any) {
+      setStripeError(err.message || 'An unknown error occurred while initiating checkout.');
+      setIsLoading(false); // Set loading to false only on error
     }
   };
 
@@ -179,12 +194,29 @@ const App: React.FC = () => {
       const script = await generateChatbotScript(config);
       setGeneratedScript(script);
       navigateTo('result');
+      closeWizardModal();
     } catch (err: any) {
       setError(err.message || 'An unknown error occurred.');
     } finally {
       setIsLoading(false);
     }
-  }, [session, navigateTo]);
+  }, [session, navigateTo, closeWizardModal]);
+  
+  const handleViewScript = useCallback(async (config: ChatbotConfig) => {
+    setIsLoading(true);
+    setError(null);
+    setGeneratedScript(null);
+    try {
+      // Just generate the script from existing config, don't create a new record.
+      const script = await generateChatbotScript(config);
+      setGeneratedScript(script);
+      navigateTo('result');
+    } catch (err: any) {
+      setError(err.message || 'An unknown error occurred.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [navigateTo]);
   
   const handleResetToDashboard = () => {
     setGeneratedScript(null);
@@ -192,19 +224,15 @@ const App: React.FC = () => {
     navigateTo(isAdmin ? 'admin' : 'dashboard');
   };
 
-  const navigateHome = () => {
-    navigateTo(session ? (isAdmin ? 'admin' : 'dashboard') : 'landing');
-  };
-
   const navigateToLanding = () => navigateTo('landing');
   const navigateToDashboard = () => navigateTo('dashboard');
   const navigateToAdmin = () => navigateTo('admin');
   const navigateToTerms = () => navigateTo('terms');
   const navigateToPrivacy = () => navigateTo('privacy');
-  const navigateToStripeConnect = () => navigateTo('stripe-connect');
+
 
   const renderContent = () => {
-    if (isLoading && !['landing', 'dashboard', 'admin', 'terms', 'privacy', 'stripe-connect'].includes(appState)) {
+    if (isLoading && !['landing', 'dashboard', 'admin', 'terms', 'privacy', 'payment-success'].includes(appState)) {
       return (
         <div className="flex justify-center items-center h-64">
           <svg className="animate-spin h-10 w-10 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -216,29 +244,27 @@ const App: React.FC = () => {
     }
 
     if (appState === 'auth') {
-        return <AuthComponent />;
+        return <AuthComponent initialMode={initialAuthMode} />;
     }
 
     switch (appState) {
-      case 'wizard':
-        return <ChatbotWizard onGenerate={handleGenerateScript} isLoading={isLoading} />;
       case 'result':
         return <CodeSnippet script={generatedScript!} onReset={handleResetToDashboard} />;
       case 'admin':
-        return <AdminDashboard onNavigateToStripeConnect={navigateToStripeConnect} />;
+        return <AdminDashboard session={session!} />;
       case 'dashboard':
-        return <Dashboard session={session!} onNavigateToWizard={() => navigateTo('wizard')} onSubscribe={handleSubscribe} isLoading={isLoading} />;
+        return <Dashboard session={session!} onCreateNewChatbot={openWizardModal} onSubscribe={handleSubscribe} isLoading={isLoading} onViewScript={handleViewScript} />;
       case 'terms':
         return <TermsOfService onBack={navigateHome} />;
       case 'privacy':
         return <PrivacyPolicy onBack={navigateHome} />;
-      case 'stripe-connect':
-        return <StripeConnectGuide onBack={navigateHome} />;
+      case 'payment-success':
+        return <PaymentSuccess onComplete={navigateHome} />;
       case 'landing':
       default:
         return (
             <>
-                <Hero onGetStarted={handleStart} />
+                <Hero onGetStarted={handleStart} onNavigateToTerms={navigateToTerms} />
                 <Features />
                 <Pricing onSubscribe={handleSubscribe} isLoading={isLoading} />
             </>
@@ -247,33 +273,41 @@ const App: React.FC = () => {
   };
   
   const isLanding = appState === 'landing';
+  const isAuth = appState === 'auth';
+  const backgroundClass = isLanding || isAuth ? '' : 'bg-slate-50 dark:bg-gray-900';
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-gray-900 font-sans isolate flex flex-col">
-      {isLanding && (
-        <div className="absolute inset-x-0 top-[-10rem] -z-10 transform-gpu overflow-hidden blur-3xl sm:top-[-20rem]" aria-hidden="true">
-          <div className="relative left-1/2 -z-10 aspect-[1155/678] w-[36.125rem] max-w-none -translate-x-1/2 rotate-[30deg] bg-gradient-to-tr from-[#ff80b5] to-[#9089fc] opacity-30 sm:left-[calc(50%-40rem)] sm:w-[72.1875rem]" style={{ clipPath: 'polygon(74.1% 44.1%, 100% 61.6%, 97.5% 26.9%, 85.5% 0.1%, 80.7% 2%, 72.5% 32.5%, 60.2% 62.4%, 52.4% 68.1%, 47.5% 58.3%, 45.2% 34.5%, 27.5% 76.7%, 0.1% 64.9%, 17.9% 100%, 27.6% 76.8%, 76.1% 97.7%, 74.1% 44.1%)' }}></div>
+    <div className={`min-h-screen font-sans isolate flex flex-col ${isAuth ? '' : 'pt-20'} ${backgroundClass}`}>
+      {(isLanding || isAuth) && (
+        <div className="fixed inset-0 -z-10 overflow-hidden">
+          <div className="absolute inset-0 transform-gpu overflow-hidden blur-3xl" aria-hidden="true">
+            <div className="absolute -top-80 left-1/2 -z-10 h-[40rem] w-[40rem] -translate-x-1/2 rounded-full bg-gradient-to-tr from-[#ff80b5] to-[#9089fc] opacity-30 animate-blob" style={{ animationDelay: '-2s' }}></div>
+            <div className="absolute -top-40 left-1/4 -z-10 h-[30rem] w-[50rem] -translate-x-1/4 rounded-full bg-gradient-to-tr from-[#9089fc] to-[#4f46e5] opacity-20 animate-blob" style={{ animationDelay: '-4s' }}></div>
+            <div className="absolute -top-20 right-1/4 -z-10 h-[50rem] w-[50rem] translate-x-1/4 rounded-full bg-gradient-to-tr from-[#ff80b5] to-[#9089fc] opacity-20 animate-blob"></div>
+          </div>
         </div>
       )}
       
-      <Header 
-        onGetStarted={handleStart} 
-        onNavigateHome={navigateHome} 
-        onNavigateToLanding={navigateToLanding} 
-        onNavigateToDashboard={navigateToDashboard}
-        onNavigateToAdmin={navigateToAdmin}
-        appState={appState} 
-        session={session} 
-        theme={theme} 
-        onToggleTheme={toggleTheme}
-        isAdmin={isAdmin} 
-      />
+      {!isAuth && (
+          <Header 
+            onGetStarted={handleStart} 
+            onNavigateHome={navigateHome} 
+            onNavigateToLanding={navigateToLanding} 
+            onNavigateToDashboard={navigateToDashboard}
+            onNavigateToAdmin={navigateToAdmin}
+            appState={appState} 
+            session={session} 
+            theme={theme} 
+            onToggleTheme={toggleTheme}
+            isAdmin={isAdmin} 
+          />
+      )}
 
-      <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-20 flex-grow">
+      <main className={isAuth ? 'flex-grow flex items-center justify-center p-4' : "container mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-20 flex-grow"}>
         {renderContent()}
       </main>
 
-      <Footer onNavigateToTerms={navigateToTerms} onNavigateToPrivacy={navigateToPrivacy} />
+      {!isAuth && <Footer onNavigateToTerms={navigateToTerms} onNavigateToPrivacy={navigateToPrivacy} />}
       <ErrorMessage error={error} onClear={() => setError(null)} />
       {stripeError && (
         <StripeErrorModal
@@ -281,10 +315,17 @@ const App: React.FC = () => {
           onClose={() => setStripeError(null)}
           onNavigateToGuide={() => {
             setStripeError(null);
-            navigateToStripeConnect();
+            // This is a dummy navigation now, consider replacing or removing
+            console.log("Navigation to guide is deprecated.");
           }}
         />
       )}
+       <WizardModal
+        isOpen={isWizardModalOpen}
+        onClose={closeWizardModal}
+        onGenerate={handleGenerateScript}
+        isLoading={isLoading}
+      />
     </div>
   );
 };

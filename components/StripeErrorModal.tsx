@@ -9,6 +9,10 @@ interface StripeErrorModalProps {
 }
 
 export const StripeErrorModal: React.FC<StripeErrorModalProps> = ({ error, onClose, onNavigateToGuide }) => {
+  // Check for keywords that indicate the issue is a browser redirect/popup block,
+  // not a server-side configuration problem.
+  const isRedirectBlock = error.toLowerCase().includes('browser') || error.toLowerCase().includes('pop-up') || error.toLowerCase().includes('copy and paste');
+
   return (
     <div
       className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 animate-fade-in"
@@ -31,14 +35,17 @@ export const StripeErrorModal: React.FC<StripeErrorModalProps> = ({ error, onClo
           </svg>
         </div>
         <h3 id="stripe-error-dialog-title" className="text-2xl font-bold text-gray-900 dark:text-white mt-4">
-          Payment System Configuration Needed
+          {isRedirectBlock ? 'Complete Your Checkout' : 'Payment System Error'}
         </h3>
         <p className="mt-2 text-gray-600 dark:text-gray-400">
-          Checkout failed. This usually means the Stripe integration is not fully set up yet.
+          {isRedirectBlock
+            ? 'Please use the link below to securely complete your subscription.'
+            : 'Checkout failed. This usually means the Stripe integration is not fully set up yet.'
+          }
         </p>
 
         <div className="mt-4 text-left bg-slate-50 dark:bg-gray-700/50 p-4 rounded-lg border border-slate-200 dark:border-gray-700">
-            <p className="font-semibold text-gray-800 dark:text-gray-200">Error Details:</p>
+            <p className="font-semibold text-gray-800 dark:text-gray-200">{isRedirectBlock ? 'Checkout Link' : 'Error Details'}:</p>
             <code className="text-sm text-red-700 dark:text-red-400 whitespace-pre-wrap break-words">{error}</code>
         </div>
         
@@ -50,14 +57,17 @@ export const StripeErrorModal: React.FC<StripeErrorModalProps> = ({ error, onClo
           >
             Close
           </button>
-          <button
-            type="button"
-            onClick={onNavigateToGuide}
-            className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-2.5 text-sm font-semibold text-white bg-primary border border-transparent rounded-lg shadow-sm hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
-          >
-            <StripeIcon className="w-5 h-5 mr-2 -ml-1" />
-            View Setup Guide
-          </button>
+          {/* Only show the "View Setup Guide" button for configuration errors, not for browser-related issues. */}
+          {!isRedirectBlock && (
+            <button
+              type="button"
+              onClick={onNavigateToGuide}
+              className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-2.5 text-sm font-semibold text-white bg-primary border border-transparent rounded-lg shadow-sm hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+            >
+              <StripeIcon className="w-5 h-5 mr-2 -ml-1" />
+              View Setup Guide
+            </button>
+          )}
         </div>
       </div>
     </div>

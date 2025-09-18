@@ -14,7 +14,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 serve(async (req) => {
   // Handle preflight CORS requests for browser security.
   if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: corsHeaders });
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
@@ -65,7 +65,10 @@ serve(async (req) => {
     const { data: targetUserData, error: fetchError } = await supabaseAdmin.auth.admin.getUserById(userId);
     if (fetchError) throw fetchError;
     
-    const existingMetadata = targetUserData.user.user_metadata || {};
+    // FIX: Add optional chaining to prevent a crash if 'targetUserData.user' is null.
+    // This is a critical safeguard against unexpected API responses that could
+    // otherwise cause a TypeError and crash the function.
+    const existingMetadata = targetUserData.user?.user_metadata || {};
     const updatedMetadata = { ...existingMetadata, role: newRole };
 
     const { data, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(

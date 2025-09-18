@@ -1,6 +1,6 @@
 import { Personality, Plan } from './types';
 
-export const PERSONALITY_DETAILS: { type: Personality; description: string }[] = [
+export const PERSONALITY_DETAILS: { type: Personality; description:string }[] = [
   {
     type: Personality.Friendly,
     description: 'A conversational and approachable tone. Good for general customer service.',
@@ -17,21 +17,59 @@ export const PERSONALITY_DETAILS: { type: Personality; description: string }[] =
     type: Personality.Enthusiastic,
     description: 'An upbeat, positive, and energetic tone. Great for marketing and sales bots.',
   },
+  {
+    type: Personality.HelpfulAssistant,
+    description: 'Clear, direct, and eager to assist. Perfect for support and guidance.',
+  },
+  {
+    type: Personality.SarcasticBot,
+    description: 'Dry, witty, and a little bit cynical. For when you want to keep users on their toes.',
+  },
 ];
+
+export const FONT_OPTIONS: string[] = [
+  'Inter',
+  'Roboto',
+  'Open Sans',
+  'Lato',
+  'Montserrat',
+  'Poppins',
+  'Nunito',
+];
+
+export const NO_PLAN: Plan = {
+  id: 'none',
+  name: 'No Plan',
+  price: '-',
+  priceDetail: '',
+  description: 'You are not currently subscribed to any plan.',
+  features: [],
+  cta: 'Choose a Plan',
+  maxChatbots: 0,
+};
 
 export const PLANS: Plan[] = [
   {
-    id: 'free', // A special identifier for the free plan
-    name: 'Free',
-    price: '$0',
+    // IMPORTANT: This is a Stripe Price ID. You must replace it.
+    // HOW TO FIX:
+    // 1. In Stripe, create a product for your "Starter" plan.
+    // 2. Add a $5/month recurring price.
+    // 3. Under "Additional options" for the price, set a 7-week trial period.
+    // 4. Copy the Price ID (e.g., 'price_...').
+    // 5. Paste it below, replacing the placeholder.
+    id: 'price_1S7jWLPE0RhZFcxKGK7Jvd8S', // <-- REPLACE THIS
+    name: 'Starter',
+    price: '$5',
     priceDetail: 'per month',
+    description: 'Perfect for getting started. Includes a 7-week free trial.',
     features: [
+      '7-week free trial',
       '1 Chatbot',
       'Up to 10 FAQs',
       'Basic Customization',
       '1,000 messages/month',
     ],
-    cta: 'Get Started',
+    cta: 'Start 7-week Trial',
     maxChatbots: 1,
   },
   {
@@ -44,6 +82,7 @@ export const PLANS: Plan[] = [
     name: 'Basic',
     price: '$10',
     priceDetail: 'per month',
+    description: 'Ideal for small businesses looking to engage more customers.',
     features: [
       '5 Chatbots',
       'Unlimited FAQs',
@@ -64,6 +103,7 @@ export const PLANS: Plan[] = [
     name: 'Pro',
     price: '$29.99',
     priceDetail: 'per month',
+    description: 'The ultimate solution for businesses that need unlimited power.',
     features: [
       'Unlimited Chatbots',
       'Unlimited FAQs',
@@ -71,6 +111,7 @@ export const PLANS: Plan[] = [
       '100,000 messages/month',
       'Priority Email Support',
       'Remove Branding',
+      'Chat API Access',
     ],
     cta: 'Choose Pro',
     featured: true,

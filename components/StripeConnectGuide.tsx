@@ -104,7 +104,7 @@ SUPABASE_SERVICE_ROLE_KEY       # From Supabase API Settings (Project API keys >
             <StepCard step={4} title="Deploy Your Functions" icon={<TerminalIcon className="w-6 h-6" />}>
                 <p>For your Supabase functions to access the new secrets, you need to deploy them. Run the following commands from your project's root directory in your terminal:</p>
                 <CodeBlock>{`# Deploy the checkout function
-supabase functions deploy create-checkout-session
+supabase functions deploy create-checkout
 
 # Deploy the webhooks function (must disable JWT verification)
 supabase functions deploy stripe-webhooks --no-verify-jwt`}</CodeBlock>

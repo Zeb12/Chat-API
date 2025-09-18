@@ -1,5 +1,8 @@
+
+
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import type { ChatbotConfig, DashboardStats, ChatbotRecord, FAQ, AdminDashboardStats, UserRecord, UserGrowthDataPoint, PlanDistribution } from '../types';
+import { Personality } from '../types';
+import type { ChatbotConfig, DashboardStats, ChatbotRecord, FAQ, AdminDashboardStats, UserRecord, UserGrowthDataPoint, PlanDistribution, ActivityEvent } from '../types';
 import { PLANS } from '../constants';
 
 // --- IMPORTANT: CONFIGURE YOUR SUPABASE CREDENTIALS ---
@@ -17,13 +20,42 @@ const supabaseAnonKey: string = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOi
 let supabaseSingleton: SupabaseClient | null = null;
 let supabaseInitializationError: string | null = null;
 
+// --- Dynamic Session Persistence ---
+let persist = true; // Default to localStorage for "Remember me" behavior
+
+/**
+ * Sets the persistence strategy for the Supabase auth client.
+ * @param shouldPersist If true, uses localStorage. If false, uses sessionStorage.
+ */
+export const setAuthPersistence = (shouldPersist: boolean) => {
+  persist = shouldPersist;
+};
+
+// Custom storage handler that delegates to either localStorage or sessionStorage
+// based on the 'persist' flag, controlled by the "Remember me" checkbox.
+const customStorage = {
+  getItem: (key: string) => {
+    return (persist ? localStorage : sessionStorage).getItem(key);
+  },
+  setItem: (key: string, value: string) => {
+    (persist ? localStorage : sessionStorage).setItem(key, value);
+  },
+  removeItem: (key: string) => {
+    (persist ? localStorage : sessionStorage).removeItem(key);
+  },
+};
+
+
 // Always attempt to create the Supabase client.
 // The `try...catch` block will handle errors from invalid credentials (including the initial placeholders)
 // and provide a specific error message to the user.
 try {
   supabaseSingleton = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
-      persistSession: true,
+      // This is replaced by the custom storage handler below to allow for
+      // dynamic persistence (e.g., "Remember me" functionality).
+      // persistSession: true, 
+      storage: customStorage,
       autoRefreshToken: true,
       detectSessionInUrl: true,
     },
@@ -52,9 +84,9 @@ export const initializationError: string | null = supabaseInitializationError;
 
 // --- INSTRUCTIONS FOR DATABASE SETUP ---
 /**
- * To enable real-time data, you need to set up two things in your Supabase project:
+ * To enable real-time data, you need to set up three things in your Supabase project:
  *
- * 1. A 'chatbots' table:
+ * 1. A 'chatbots' table with Row Level Security (RLS):
  *    Go to the SQL Editor in your Supabase dashboard and run this script:
  *
  *    CREATE TABLE public.chatbots (
@@ -69,39 +101,94 @@ export const initializationError: string | null = supabaseInitializationError;
  *    -- Enable Row Level Security (RLS)
  *    ALTER TABLE public.chatbots ENABLE ROW LEVEL SECURITY;
  *
- *    -- Create policies to allow users to manage their own chatbots
- *    CREATE POLICY "Users can manage their own chatbots" ON public.chatbots
- *      FOR ALL USING (auth.uid() = user_id);
+ *    -- Drop old policies that might exist
+ *    DROP POLICY IF EXISTS "Users can manage their own chatbots" ON public.chatbots;
+ *
+ *    -- Create specific, secure policies for each action
+ *    CREATE POLICY "Users can view their own chatbots" ON public.chatbots
+ *      FOR SELECT USING (auth.uid() = user_id);
+ *    CREATE POLICY "Users can insert their own chatbots" ON public.chatbots
+ *      FOR INSERT WITH CHECK (auth.uid() = user_id);
+ *    CREATE POLICY "Users can update their own chatbots" ON public.chatbots
+ *      FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+ *    CREATE POLICY "Users can delete their own chatbots" ON public.chatbots
+ *      FOR DELETE USING (auth.uid() = user_id);
  *
  *
  * 2. An 'all_users' view for the Admin Dashboard:
- *    This allows the admin user to see user data securely. Run this in the SQL Editor:
+ *    This view and its associated permissions allow the admin user to see user data.
+ *    Run this entire block as a single script in your Supabase SQL Editor.
  *
- *    -- This view allows querying the normally protected 'auth.users' table.
- *    -- By using 'with (security_definer)', the view runs with the permissions of its owner (postgres),
- *    -- which has access to the auth schema. The RLS policy on the view then securely controls
- *    -- which data the calling user is allowed to see. This fixes permission errors.
+ *    -- Create the view using 'security_definer' to grant access to the 'auth.users' table.
  *    CREATE OR REPLACE VIEW public.all_users
  *    WITH (security_definer)
  *    AS SELECT
- *      id,
- *      email,
- *      raw_user_meta_data,
- *      created_at
- *    FROM
- *      auth.users;
+ *      id, email, raw_user_meta_data, created_at, last_sign_in_at
+ *    FROM auth.users;
  *
- *    -- Enable RLS for the new view
+ *    -- =====================================================================================
+ *    -- !! CRITICAL PERMISSION STEP !!
+ *    -- =====================================================================================
+ *    -- The following GRANT statement is MANDATORY for the Admin Dashboard to work.
+ *    --
+ *    -- WHY IS THIS NEEDED?
+ *    -- Your web app uses a public-facing "anon" key. For security, this key cannot see
+ *    -- any tables or views by default. This GRANT command makes the 'all_users' view
+ *    -- VISIBLE to your app. The Row Level Security (RLS) policy below then ensures
+ *    -- that only the specified admin can actually READ THE DATA.
+ *    --
+ *    -- WHAT HAPPENS IF YOU SKIP THIS?
+ *    -- You will see errors in your browser console like:
+ *    -- "Failed to fetch users: Could not find the table 'public.all_users' in the schema cache (Code: PGRST205)"
+ *    -- This command directly fixes that error.
+ *    -- =====================================================================================
+ *    GRANT SELECT ON public.all_users TO anon, authenticated;
+ *
+ *    -- Enable Row Level Security (RLS) on the view.
  *    ALTER VIEW public.all_users OWNER TO postgres;
  *    ALTER VIEW public.all_users ENABLE ROW LEVEL SECURITY;
  *
- *    -- Create a policy that only allows users with an 'Admin' role to read from this view.
- *    -- This is more secure and flexible than hardcoding an email address.
- *    -- An admin can grant other users admin privileges from the app's admin dashboard.
- *    CREATE POLICY "Allow admin to read all users" ON public.all_users
- *      FOR SELECT USING (
- *        (SELECT raw_user_meta_data->>'role' FROM auth.users WHERE id = auth.uid()) = 'Admin'
- *      );
+ *    -- Drop old policies to ensure a clean setup.
+ *    DROP POLICY IF EXISTS "Allow admin to read all users" ON public.all_users;
+ *    DROP POLICY IF EXISTS "Allow specific admin user to read all users" ON public.all_users;
+ *
+ *    -- Create the RLS policy. This is the second layer of security.
+ *    -- It ensures that even though the view is visible, only the specified admin's email can actually read the data.
+ *    -- IMPORTANT: Replace the placeholder email with YOUR admin email address.
+ *    CREATE POLICY "Allow specific admin user to read all users" ON public.all_users
+ *      FOR SELECT USING (auth.email() = 'zebsnellenbarger60@gmail.com');
+ *
+ *
+ * 3. An 'all_chatbots' view for the Admin Dashboard:
+ *    This view and its permissions allow the admin to see all chatbot data.
+ *    Run this entire block as a single script in your Supabase SQL Editor.
+ *
+ *    -- Create the view using 'security_definer' to access all rows in 'public.chatbots'.
+ *    CREATE OR REPLACE VIEW public.all_chatbots
+ *    WITH (security_definer)
+ *    AS SELECT * FROM public.chatbots;
+ *
+ *    -- =====================================================================================
+ *    -- !! CRITICAL PERMISSION STEP !!
+ *    -- =====================================================================================
+ *    -- Just like the 'all_users' view, this GRANT statement is MANDATORY.
+ *    -- Without it, your application (using the anon key) cannot see that the view
+ *    -- exists, which will result in schema cache errors (PGRST205).
+ *    -- RLS then provides the actual data security.
+ *    -- =====================================================================================
+ *    GRANT SELECT ON public.all_chatbots TO anon, authenticated;
+ *
+ *    -- Enable Row Level Security (RLS) on the view.
+ *    ALTER VIEW public.all_chatbots OWNER TO postgres;
+ *    ALTER VIEW public.all_chatbots ENABLE ROW LEVEL SECURITY;
+ *
+ *    -- Drop old policies to ensure a clean setup.
+ *    DROP POLICY IF EXISTS "Allow admin to read all chatbots" ON public.all_chatbots;
+ *
+ *    -- Create the RLS policy to restrict data access to only the specified admin.
+ *    -- IMPORTANT: Replace the placeholder email with YOUR admin email address.
+ *    CREATE POLICY "Allow admin to read all chatbots" ON public.all_chatbots
+ *      FOR SELECT USING (auth.email() = 'zebsnellenbarger60@gmail.com');
  *
  */
 
@@ -109,26 +196,47 @@ export const generateChatbotScript = async (config: ChatbotConfig): Promise<stri
   // A guard clause ensures Supabase is configured before invoking a function.
   if (!supabase) throw new Error("Supabase is not configured. Cannot generate script.");
   
-  try {
-    const { data, error } = await supabase.functions.invoke('generate-chatbot-script', {
-      body: { config },
-    });
+  const { data, error } = await supabase.functions.invoke('generate-chatbot-script', {
+    body: { config },
+  });
 
-    if (error) {
-      throw error;
-    }
-
-    if (data && typeof data.script === 'string') {
-      return data.script;
-    } else {
-      throw new Error("Invalid response format from the server.");
-    }
-
-  } catch (error) {
+  // If the invoke call itself fails (e.g., network, 5xx error), 'error' will be populated.
+  if (error) {
     console.error("Error invoking Supabase function:", error);
-    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-    throw new Error(`Failed to generate chatbot script: ${errorMessage}`);
+    
+    // Attempt to extract the detailed error message from the function's response body.
+    let detailedMessage = "An unexpected error occurred while contacting the script generation service."; // Default message
+    if (error.context && typeof (error.context as any).json === 'function') {
+        try {
+            const errorJson = await (error.context as any).json();
+            if (errorJson && errorJson.error) {
+                // This is the specific error message from the backend function.
+                detailedMessage = errorJson.error;
+            }
+        } catch (e) {
+            // If parsing fails, fall back to the generic invoke error message.
+            detailedMessage = error.message;
+        }
+    } else {
+        detailedMessage = error.message;
+    }
+
+    // Throw a new, more informative error to be caught by the UI.
+    throw new Error(detailedMessage);
   }
+
+  // If the function returns 200 OK, but contains an error payload (less common for my setup, but good practice).
+  if (data.error) {
+      throw new Error(data.error);
+  }
+
+  // If everything is successful, return the script.
+  if (data && typeof data.script === 'string') {
+    return data.script;
+  } 
+  
+  // If we reach here, the response format is invalid.
+  throw new Error("Invalid response format from the server. Expected a 'script' property.");
 };
 
 /**
@@ -173,54 +281,60 @@ export const suggestFaqsFromUrl = async (url: string): Promise<Omit<FAQ, 'id'>[]
 /**
  * Invokes a Supabase Edge Function to create a Stripe Checkout session.
  * This function securely handles the creation of a checkout session on the server-side
- * and returns the URL for redirection.
+ * and redirects the current window to the Stripe-hosted checkout page.
  *
  * @param {string} priceId The ID of the Stripe Price object.
  * @throws Will throw an error if the checkout session cannot be created or if the server response is invalid.
  */
 export const redirectToCheckout = async (priceId: string) => {
-  // A guard clause ensures Supabase is configured before invoking a function.
   if (!supabase) throw new Error("Supabase is not configured. Cannot redirect to checkout.");
-  
+
   try {
-    const { data, error: invokeError } = await supabase.functions.invoke('create-checkout-session', {
+    const { data, error: invokeError } = await supabase.functions.invoke('create-checkout', {
       body: { priceId },
     });
 
     if (invokeError) {
-        // This is a special case. The "Failed to send a request" error is a generic
-        // network error from the Supabase client, often caused by a CORS preflight failure.
-        // This usually means the Edge Function crashed on startup (e.g., due to missing env vars)
-        // and couldn't respond to the OPTIONS request. We provide a more helpful message here.
-        if (invokeError.message.includes('Failed to send a request')) {
-            throw new Error(
-                "Could not connect to the payment service. This is often caused by a server-side configuration issue.\n\n" +
-                "Troubleshooting steps:\n" +
-                "1. Check the Supabase Function logs for 'create-checkout-session' for any startup errors.\n" +
-                "2. Ensure all required environment variables (like STRIPE_SECRET_KEY, SITE_URL, etc.) are correctly set in your Supabase project."
-            );
+      let detailedMessage = invokeError.message; // Default to the generic message.
+
+      // Supabase Function errors often contain a `context` property with the Response object.
+      // We try to parse the JSON body of this response to get a more specific error message
+      // that we've set in the Edge Function itself.
+      if (invokeError.context && typeof invokeError.context.json === 'function') {
+        try {
+          const errorJson = await invokeError.context.json();
+          if (errorJson && errorJson.error) {
+            detailedMessage = errorJson.error;
+          }
+        } catch (e) {
+          // If the body isn't valid JSON, we'll just fall back to the generic message.
+          console.error("Could not parse JSON from function error response.", e);
         }
-        throw invokeError;
+      }
+      throw new Error(detailedMessage);
     }
     
-    // Check for a specific error message from the backend function, otherwise check for URL
     if (data.error) {
       throw new Error(data.error);
     }
     
     if (data.url) {
-      // Redirect the user to the Stripe Checkout page
-      window.location.href = data.url;
+      const checkoutWindow = window.open(data.url, '_blank');
+      if (!checkoutWindow) {
+        throw new Error(
+          "Your browser blocked the pop-up.\n\nPlease copy and paste the following URL into a new tab to complete your checkout:\n\n" + data.url
+        );
+      }
     } else {
       throw new Error("No checkout URL returned from the server. This could be due to an invalid Price ID or server configuration issue.");
     }
   } catch (error) {
-    console.error("Error during checkout process:", error);
-    // Re-throw the error so the calling component can handle it.
-    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred during checkout.";
+    // The error is thrown and displayed in the UI modal, so the console.error is redundant.
     throw new Error(errorMessage);
   }
 };
+
 
 // --- New function to save chatbot config ---
 export const createChatbot = async (config: ChatbotConfig): Promise<string> => {
@@ -247,26 +361,42 @@ export const createChatbot = async (config: ChatbotConfig): Promise<string> => {
 
 // --- Dashboard Data Functions ---
 
-export const getDashboardStats = async (): Promise<DashboardStats> => {
+export const getDashboardStats = async (userId: string): Promise<DashboardStats> => {
   if (!supabase) throw new Error("Supabase not initialized");
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("User not authenticated.");
+  if (!userId) throw new Error("User ID is required.");
 
   const { count: totalChatbots, error: chatbotsError } = await supabase
     .from('chatbots')
     .select('*', { count: 'exact', head: true })
-    .eq('user_id', user.id);
+    .eq('user_id', userId);
 
-  if (chatbotsError) throw chatbotsError;
+  if (chatbotsError) {
+    console.error('Error fetching chatbot stats:', chatbotsError);
+    // Provide a more descriptive error message to aid debugging.
+    throw new Error(`Failed to fetch dashboard stats: ${chatbotsError.message} (Code: ${chatbotsError.code})`);
+  }
 
   const { data: conversationsData, error: convosError } = await supabase
     .from('chatbots')
     .select('conversations_count')
-    .eq('user_id', user.id);
+    .eq('user_id', userId);
+  
+  if (convosError) {
+    console.error('Error fetching conversation stats:', convosError);
+    // Provide a more descriptive error message.
+    throw new Error(`Failed to fetch conversation stats: ${convosError.message} (Code: ${convosError.code})`);
+  }
 
-  if (convosError) throw convosError;
-
-  const totalConversations = conversationsData.reduce((sum, bot) => sum + (bot.conversations_count || 0), 0);
+  // Defensively reduce: ensure data is an array and each item is valid.
+  const totalConversations = Array.isArray(conversationsData)
+    ? conversationsData.reduce((sum, bot) => {
+        // Check if bot is a valid object with the expected property.
+        if (bot && typeof bot.conversations_count === 'number') {
+          return sum + bot.conversations_count;
+        }
+        return sum;
+      }, 0)
+    : 0;
 
   return {
     totalChatbots: totalChatbots ?? 0,
@@ -275,29 +405,100 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
   };
 };
 
-export const getChatbots = async (): Promise<ChatbotRecord[]> => {
+export const getChatbots = async (userId: string): Promise<ChatbotRecord[]> => {
   if (!supabase) throw new Error("Supabase not initialized");
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("User not authenticated.");
+  if (!userId) throw new Error("User ID is required.");
 
   const { data, error } = await supabase
     .from('chatbots')
-    .select('id, name, created_at, conversations_count')
-    .eq('user_id', user.id)
+    .select('id, name, created_at, conversations_count, config')
+    .eq('user_id', userId)
     .order('created_at', { ascending: false });
 
-  if (error) throw error;
+  if (error) {
+    console.error('Error fetching chatbots list:', error);
+    throw new Error(`Failed to fetch chatbots: ${error.message} (Code: ${error.code})`);
+  }
   
-  // Map Supabase data to the ChatbotRecord type
-  return data.map(bot => ({
-    id: bot.id,
-    name: bot.name,
-    createdAt: bot.created_at,
-    monthlyConversations: bot.conversations_count,
-    // Generate mock trend data as we don't store historical conversation counts
-    conversationTrend: Array.from({ length: 7 }, () => Math.floor(Math.random() * ((bot.conversations_count || 1) / 30) + 5)),
-  }));
+  if (!Array.isArray(data)) {
+    return []; // Return empty array if data is null or not an array
+  }
+
+  // Filter out any potentially null/invalid records and map to ChatbotRecord type
+  return data
+    .filter(bot => bot && bot.id) // Basic validation: ensure bot object and id exist
+    .map(bot => {
+      // Create a default config structure to merge against.
+      // This is a defensive measure to prevent crashes if a chatbot record
+      // in the database has a malformed or incomplete 'config' object.
+      const defaultConfig: ChatbotConfig = {
+          businessInfo: { 
+              name: bot.name || 'Untitled', 
+              description: '', 
+              website: '' 
+          },
+          personality: Personality.Friendly,
+          // CRITICAL: Ensure faqs is always an array to prevent .map errors.
+          faqs: [], 
+          appearance: { 
+              logo: null, 
+              colors: { 
+                  primary: '#7C3AED', 
+                  botMessage: '#F3F4F6', 
+                  text: '#1F2937' 
+              }, 
+              fontFamily: 'Inter' 
+          }
+      };
+
+      // Deeply merge the stored config over the default.
+      // This ensures that even if bot.config exists but is missing nested properties
+      // (like 'faqs' or 'colors'), the final config object is complete and safe to use.
+      const finalConfig: ChatbotConfig = {
+          ...defaultConfig,
+          ...(bot.config || {}),
+          businessInfo: {
+              ...defaultConfig.businessInfo,
+              ...(bot.config?.businessInfo || {}),
+              // Ensure the chatbot's name from the top-level record is used if the config is missing it.
+              name: bot.config?.businessInfo?.name || bot.name || 'Untitled'
+          },
+          // Explicitly ensure 'faqs' is an array, falling back to an empty one. This is the most common point of failure.
+          faqs: bot.config?.faqs || [],
+          appearance: {
+              ...defaultConfig.appearance,
+              ...(bot.config?.appearance || {}),
+              colors: {
+                  ...defaultConfig.appearance.colors,
+                  ...(bot.config?.appearance?.colors || {})
+              }
+          }
+      };
+
+      return {
+        id: bot.id,
+        name: bot.name || 'Untitled Chatbot',
+        createdAt: bot.created_at || new Date().toISOString(),
+        monthlyConversations: bot.conversations_count ?? 0,
+        config: finalConfig, // Use the sanitized config
+        conversationTrend: Array.from({ length: 7 }, () => Math.floor(Math.random() * (((bot.conversations_count ?? 0) || 1) / 30) + 5)),
+      };
+    });
 };
+
+export const deleteChatbot = async (chatbotId: string): Promise<void> => {
+    if (!supabase) throw new Error("Supabase is not configured.");
+    const { error } = await supabase
+        .from('chatbots')
+        .delete()
+        .eq('id', chatbotId);
+
+    if (error) {
+        console.error("Error deleting chatbot:", error);
+        throw new Error(`Failed to delete chatbot: ${error.message}`);
+    }
+};
+
 
 // --- Admin Dashboard Data Functions ---
 
@@ -308,31 +509,55 @@ const parsePrice = (price: string): number => {
 
 export const getAdminDashboardStats = async (): Promise<AdminDashboardStats> => {
     if (!supabase) throw new Error("Supabase not initialized");
-    
-    // Fetch all data in parallel
-    const [usersResult, chatbotsResult] = await Promise.all([
-        supabase.from('all_users').select('raw_user_meta_data'),
-        supabase.from('chatbots').select('conversations_count')
+
+    // Define paid plans to filter for revenue calculation
+    const paidPlanNames = PLANS.filter(p => p.price !== '$0').map(p => p.name);
+
+    // Fetch counts and data in parallel with optimized queries
+    const [usersCountResult, chatbotsResult, paidUsersResult] = await Promise.all([
+        // Query 1: Get total user count efficiently without fetching row data.
+        supabase.from('all_users').select('*', { count: 'exact', head: true }),
+        
+        // Query 2: Get all chatbot data for chatbot and conversation counts.
+        // Note: This still fetches all conversation counts, which could be slow on an
+        // extremely large scale, but is much better than fetching all user data.
+        supabase.from('all_chatbots').select('conversations_count', { count: 'exact' }),
+        
+        // Query 3: Fetch ONLY users on paid plans for revenue calculation.
+        // This is a much smaller and more performant query than fetching all users.
+        supabase.from('all_users')
+          .select('raw_user_meta_data')
+          .filter('raw_user_meta_data->>plan', 'in', `(${paidPlanNames.join(',')})`)
     ]);
 
-    if (usersResult.error) throw usersResult.error;
-    if (chatbotsResult.error) throw chatbotsResult.error;
+    // FIX: Throw descriptive errors instead of the raw error object to prevent "[object Object]" logs.
+    if (usersCountResult.error) {
+        throw new Error(`Failed to fetch user stats: ${usersCountResult.error.message}`);
+    }
+    if (chatbotsResult.error) {
+        throw new Error(`Failed to fetch chatbot stats: ${chatbotsResult.error.message}`);
+    }
+    if (paidUsersResult.error) {
+        throw new Error(`Failed to fetch paid user data: ${paidUsersResult.error.message}`);
+    }
     
-    const allUsersData = usersResult.data || [];
-    const allChatbotsData = chatbotsResult.data || [];
+    // Process results
+    const totalUsers = usersCountResult.count ?? 0;
+    const totalChatbots = chatbotsResult.count ?? 0;
+    
+    const totalConversations = (chatbotsResult.data || []).reduce(
+      (sum, bot) => sum + (bot.conversations_count || 0), 0
+    );
 
-    const totalUsers = allUsersData.length;
-    const totalChatbots = allChatbotsData.length;
-    const totalConversations = allChatbotsData.reduce((sum, bot) => sum + bot.conversations_count, 0);
-
-    const monthlyRevenue = allUsersData.reduce((sum, user) => {
+    const monthlyRevenue = (paidUsersResult.data || []).reduce((sum, user) => {
         const planName = user.raw_user_meta_data?.plan as string;
         const status = user.raw_user_meta_data?.status as string;
 
-        // Note: For a real app, status would come from Stripe webhook data
+        // Note: For a real app, subscription status would come from Stripe webhook data
         if (status !== 'Suspended' && planName) {
             const plan = PLANS.find(p => p.name === planName);
-            if (plan && plan.price !== '$0') {
+            // The plan should always be found because we filtered for them.
+            if (plan) {
                 return sum + parsePrice(plan.price);
             }
         }
@@ -347,22 +572,30 @@ export const getAdminDashboardStats = async (): Promise<AdminDashboardStats> => 
     };
 };
 
+
 export const getAllUsers = async (): Promise<UserRecord[]> => {
     if (!supabase) throw new Error("Supabase not initialized");
     
     const { data, error } = await supabase
         .from('all_users')
-        .select('id, email, created_at, raw_user_meta_data');
+        .select('id, email, created_at, raw_user_meta_data, last_sign_in_at');
         
-    if (error) throw error;
+    if (error) {
+      throw new Error(`Failed to fetch users: ${error.message} (Code: ${error.code})`);
+    }
+    
+    // CRITICAL FIX: Handle cases where the query returns no data (null) to prevent crashes.
+    if (!data) return [];
 
     return data.map(user => ({
         id: user.id,
         email: user.email,
-        plan: user.raw_user_meta_data?.plan || 'Free',
+        plan: user.raw_user_meta_data?.plan || 'None',
         status: user.raw_user_meta_data?.status || 'Active',
         role: user.raw_user_meta_data?.role || 'User',
-        joinedAt: user.created_at,
+        // Defensively provide a fallback for the join date.
+        joinedAt: user.created_at || new Date().toISOString(),
+        lastSignInAt: user.last_sign_in_at,
         subscriptionStatus: user.raw_user_meta_data?.subscription_status || null,
         renewalDate: user.raw_user_meta_data?.subscription_renewal_date
             ? new Date(user.raw_user_meta_data.subscription_renewal_date * 1000).toLocaleDateString('en-US', {
@@ -371,28 +604,8 @@ export const getAllUsers = async (): Promise<UserRecord[]> => {
                 day: 'numeric',
               })
             : null,
+        raw_user_meta_data: user.raw_user_meta_data || {},
     }));
-};
-
-export const updateUserRole = async (userId: string, newRole: 'User' | 'Admin'): Promise<void> => {
-  if (!supabase) throw new Error("Supabase is not configured.");
-  
-  const { error } = await supabase.functions.invoke('update-user-role', {
-      body: { userId, newRole },
-  });
-
-  if (error) {
-    console.error(`Error invoking update-user-role function for user ${userId}:`, error);
-    // Attempt to extract a more specific error message from the function's response
-    let message = error.message;
-    if (error.context && typeof error.context === 'object') {
-        const context = error.context as any;
-        if (context.error) {
-            message = context.error;
-        }
-    }
-    throw new Error(`Failed to update role: ${message}`);
-  }
 };
 
 export const manageSubscription = async (userId: string, action: 'change' | 'cancel', newPriceId?: string): Promise<{ success: boolean; message?: string }> => {
@@ -425,7 +638,12 @@ export const getUserGrowthData = async (): Promise<UserGrowthDataPoint[]> => {
         .from('all_users')
         .select('created_at');
     
-    if (error) throw error;
+    if (error) {
+      throw new Error(`Failed to fetch user growth data: ${error.message} (Code: ${error.code})`);
+    }
+    
+    // CRITICAL FIX: Handle null response from the database.
+    if (!users) return [];
 
     const today = new Date();
     const dates = Array.from({ length: 7 }).map((_, i) => {
@@ -437,9 +655,12 @@ export const getUserGrowthData = async (): Promise<UserGrowthDataPoint[]> => {
     const userCountsByDate: { [key: string]: number } = dates.reduce((acc, date) => ({ ...acc, [date]: 0 }), {});
 
     users.forEach(user => {
-        const joinDate = user.created_at.split('T')[0];
-        if (userCountsByDate[joinDate] !== undefined) {
-            userCountsByDate[joinDate]++;
+        // Defensively check for user and created_at to avoid errors on malformed records.
+        if (user && user.created_at) {
+            const joinDate = user.created_at.split('T')[0];
+            if (userCountsByDate[joinDate] !== undefined) {
+                userCountsByDate[joinDate]++;
+            }
         }
     });
 
@@ -456,15 +677,21 @@ export const getPlanDistribution = async (): Promise<PlanDistribution> => {
         .from('all_users')
         .select('raw_user_meta_data');
         
-    if (error) throw error;
+    if (error) {
+      throw new Error(`Failed to fetch plan distribution: ${error.message} (Code: ${error.code})`);
+    }
     
     const distribution: PlanDistribution = {
         free: 0,
         basic: 0,
         pro: 0,
     };
+    
+    // CRITICAL FIX: Handle null response and return the default distribution.
+    if (!users) return distribution;
 
     users.forEach(user => {
+        // The existing logic here is already safe with optional chaining and fallbacks.
         const plan = (user.raw_user_meta_data?.plan || 'Free') as string;
         const key = plan.toLowerCase() as keyof PlanDistribution;
         if (distribution.hasOwnProperty(key)) {
@@ -473,4 +700,121 @@ export const getPlanDistribution = async (): Promise<PlanDistribution> => {
     });
 
     return distribution;
+};
+
+export const getAdminActivityFeed = async (): Promise<ActivityEvent[]> => {
+    // In a real application, this would fetch data from a dedicated 'activity_log' table.
+    // For this demo, we'll generate mock data based on the latest users and chatbots.
+    if (!supabase) throw new Error("Supabase not initialized");
+
+    const [usersResult, chatbotsResult, subscriptionEventsResult] = await Promise.all([
+        supabase.from('all_users').select('email, created_at').order('created_at', { ascending: false }).limit(5),
+        supabase.from('all_chatbots').select('name, created_at, user_id').order('created_at', { ascending: false }).limit(5),
+        // Fetch users with subscription data to simulate subscription events
+        supabase.from('all_users')
+            .select('email, raw_user_meta_data, created_at, last_sign_in_at')
+            .in('raw_user_meta_data->>subscription_status', ['active', 'trialing', 'canceled'])
+            .order('last_sign_in_at', { ascending: false, nullsFirst: true })
+            .limit(5)
+    ]);
+
+    if (usersResult.error) throw usersResult.error;
+    if (chatbotsResult.error) throw chatbotsResult.error;
+    if (subscriptionEventsResult.error) throw subscriptionEventsResult.error;
+
+    const userActivities: ActivityEvent[] = (usersResult.data || []).map(user => ({
+        id: `user-${user.created_at}`,
+        type: 'user_signup',
+        description: 'New user signed up.',
+        userEmail: user.email,
+        timestamp: user.created_at,
+    }));
+    
+    const chatbotsData = chatbotsResult.data || [];
+    const chatbotUserIds = chatbotsData.map(bot => bot.user_id);
+    let userEmailMap = new Map<string, string>();
+
+    if (chatbotUserIds.length > 0) {
+        const { data: usersData, error: usersError } = await supabase
+            .from('all_users')
+            .select('id, email')
+            .in('id', chatbotUserIds);
+        
+        if (usersError) throw usersError;
+
+        if (usersData) {
+            userEmailMap = usersData.reduce((map, user) => {
+                map.set(user.id, user.email);
+                return map;
+            }, new Map<string, string>());
+        }
+    }
+
+    const chatbotActivities: ActivityEvent[] = chatbotsData.map(bot => ({
+        id: `bot-${bot.created_at}`,
+        type: 'chatbot_created',
+        description: `Created chatbot: ${bot.name}`,
+        userEmail: userEmailMap.get(bot.user_id) || 'Unknown User', 
+        timestamp: bot.created_at,
+    }));
+
+    const subscriptionActivities: ActivityEvent[] = (subscriptionEventsResult.data || [])
+        // FIX: Explicitly type the return value of the map function to guide TypeScript's inference,
+        // which resolves the type predicate error in the subsequent filter.
+        .map((user): ActivityEvent | null => {
+            const planName = user.raw_user_meta_data?.plan || 'Unknown Plan';
+            const status = user.raw_user_meta_data?.subscription_status;
+            // Use last sign-in as a proxy for the event timestamp, falling back to join date.
+            const timestamp = user.last_sign_in_at || user.created_at;
+
+            if (status === 'active' || status === 'trialing') {
+                return {
+                    id: `sub-start-${user.email}-${timestamp}`,
+                    type: 'subscription_started' as const,
+                    description: `Started ${planName} plan.`,
+                    userEmail: user.email,
+                    timestamp: timestamp,
+                };
+            } else if (status === 'canceled') {
+                return {
+                    id: `sub-cancel-${user.email}-${timestamp}`,
+                    type: 'subscription_canceled' as const,
+                    description: `Canceled ${planName} plan.`,
+                    userEmail: user.email,
+                    timestamp: timestamp,
+                };
+            }
+            return null;
+        })
+        .filter((event): event is ActivityEvent => event !== null);
+
+    // Combine, sort by date, and take the most recent events
+    return [...userActivities, ...chatbotActivities, ...subscriptionActivities]
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, 5);
+};
+
+
+export const updateUserStatus = async (userIds: string[], status: 'Active' | 'Suspended'): Promise<{ success: boolean; message?: string }> => {
+    if (!supabase) throw new Error("Supabase is not configured.");
+
+    const { data, error } = await supabase.functions.invoke('manage-users', {
+        body: { userIds, status },
+    });
+
+    if (error) {
+        console.error(`Error invoking manage-users function:`, error);
+        let message = error.message;
+        if (error.context && typeof (error.context as any).json === 'function') {
+            try {
+                const contextError = await (error.context as any).json();
+                if (contextError.error) {
+                    message = contextError.error;
+                }
+            } catch (e) { /* ignore json parse error */ }
+        }
+        throw new Error(`Failed to update user status: ${message}`);
+    }
+    
+    return data;
 };

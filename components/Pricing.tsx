@@ -1,6 +1,7 @@
 import React from 'react';
 import { PLANS } from '../constants';
 import { CheckCircleIcon } from './icons/CheckCircleIcon';
+import { useScrollAnimation } from '../hooks/useScrollAnimation';
 
 interface PricingProps {
   onSubscribe: (planId: string) => void;
@@ -9,8 +10,14 @@ interface PricingProps {
 }
 
 export const Pricing: React.FC<PricingProps> = ({ onSubscribe, isEmbedded = false, isLoading = false }) => {
+  const [ref, isVisible] = useScrollAnimation<HTMLElement>({ threshold: 0.2 });
+
   return (
-    <section id="pricing" className={isEmbedded ? "py-16" : "py-24 sm:py-32"}>
+    <section 
+      ref={ref} 
+      id="pricing" 
+      className={`scroll-animate ${isVisible ? 'is-visible' : ''} ${isEmbedded ? "py-16" : "py-24 sm:py-32"}`}
+    >
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white sm:text-4xl">
@@ -34,7 +41,7 @@ export const Pricing: React.FC<PricingProps> = ({ onSubscribe, isEmbedded = fals
                 {plan.name}
               </h3>
               <p className={`mt-4 text-sm leading-6 ${plan.featured ? 'text-gray-300 dark:text-gray-400' : 'text-gray-600 dark:text-gray-400'}`}>
-                A great plan for small businesses.
+                {plan.description}
               </p>
               <p className="mt-6 flex items-baseline gap-x-1">
                 <span className={`text-4xl font-bold tracking-tight ${plan.featured ? 'text-white' : 'text-gray-900 dark:text-white'}`}>

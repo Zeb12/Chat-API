@@ -1,14 +1,16 @@
 {
-  "name": "AI Chatbot Generator",
+  "name": "Chatbot Studio",
   "description": "An application to help users generate a custom AI-powered chatbot script that can be easily embedded into their website. Users can define the chatbot's personality, business information, and frequently asked questions.",
   "requestFramePermissions": [],
   "supabase": {
     "functions": [
-      "create-checkout-session",
       "generate-chatbot-script",
       "suggest-faqs",
-      "update-user-role",
-      "manage-subscription"
+      "manage-subscription",
+      "check-subscription",
+      "create-checkout",
+      "customer-portal",
+      "manage-users"
     ]
   }
 }

@@ -29,7 +29,19 @@ import { corsHeaders } from '../_shared/cors.ts';
 // This function updates the user's metadata in Supabase Auth.
 const updateUserSubscription = async (supabaseAdmin: SupabaseClient, subscription: Stripe.Subscription) => {
   const customerId = subscription.customer as string;
-  const planId = subscription.items.data[0].price.id;
+  
+  // CRITICAL FIX: Add a defensive check to ensure subscription items exist.
+  // In some edge cases, the `items.data` array could be empty, which would cause
+  // `subscription.items.data[0]` to be undefined, leading to a crash when
+  // trying to access `.price.id`. This prevents the entire function from failing.
+  const subscriptionItem = subscription.items.data[0];
+  if (!subscriptionItem) {
+    console.error(`Webhook received subscription ${subscription.id} with no subscription items. Cannot process.`);
+    // Acknowledge the webhook to Stripe by returning successfully, preventing retries for this malformed event.
+    return;
+  }
+  
+  const planId = subscriptionItem.price.id;
   const status = subscription.status;
   // Stripe sends current_period_end as a UNIX timestamp (seconds since epoch)
   const renewalDate = subscription.current_period_end;
@@ -48,7 +60,12 @@ const updateUserSubscription = async (supabaseAdmin: SupabaseClient, subscriptio
   }
   
   const userId = userData.id;
-  const existingMetadata = userData.raw_user_meta_data || {};
+
+  // Defensively handle raw_user_meta_data to prevent a crash if it's not a valid object.
+  // This is a critical fix to prevent data corruption from crashing the function.
+  const existingMetadata = (typeof userData.raw_user_meta_data === 'object' && userData.raw_user_meta_data !== null)
+    ? userData.raw_user_meta_data
+    : {};
 
   // Update the user's metadata with the new subscription details.
   const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
@@ -78,7 +95,6 @@ serve(async (req) => {
   }
 
   try {
-    // FIX: Move all client initializations and env var checks inside the handler.
     // This is a critical change to prevent the function from crashing on startup
     // if environment variables are missing. A startup crash is a common cause of
     // CORS errors because the function can't respond to the preflight OPTIONS request.
@@ -110,12 +126,11 @@ serve(async (req) => {
     }
 
     // Verify the webhook signature to ensure the request is from Stripe.
+    // The Stripe SDK will automatically use the global Web Crypto API in Deno.
     const event = await stripe.webhooks.constructEventAsync(
       body,
       signature,
-      signingSecret,
-      undefined,
-      Stripe.createSubtleCryptoProvider()
+      signingSecret
     );
 
     // Handle the specific webhook event types.

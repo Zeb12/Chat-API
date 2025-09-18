@@ -44,7 +44,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateToTerms, onNavigateToP
           <div className="space-y-8">
             <div className="flex items-center space-x-2">
               <LogoIcon className="h-8 w-auto text-primary" />
-              <span className="text-2xl font-bold text-gray-900 dark:text-white">ChatBot Pro</span>
+              <span className="text-2xl font-bold text-gray-900 dark:text-white">ChatBot Studio</span>
             </div>
             <p className="text-sm leading-6 text-gray-600 dark:text-gray-400">
               Transforming customer interaction.
@@ -105,7 +105,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateToTerms, onNavigateToP
           </div>
         </div>
         <div className="mt-16 border-t border-gray-900/10 dark:border-white/10 pt-8 sm:mt-20 lg:mt-24">
-          <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">&copy; 2024 ChatBot Pro. All rights reserved.</p>
+          <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">&copy; 2024 ChatBot Studio. All rights reserved.</p>
         </div>
       </div>
     </footer>

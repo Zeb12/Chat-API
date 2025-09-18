@@ -11,13 +11,13 @@ export const TermsOfService: React.FC<LegalPageProps> = ({ onBack }) => {
         <h1>Terms of Service</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400 !mt-0">Last updated: July 26, 2024</p>
         
-        <p>Welcome to ChatBot Pro! These Terms of Service ("Terms") govern your use of our website and the AI chatbot generation services (collectively, the "Service") provided by ChatBot Pro ("we," "us," or "our").</p>
+        <p>Welcome to ChatBot Studio! These Terms of Service ("Terms") govern your use of our website and the AI chatbot generation services (collectively, the "Service") provided by ChatBot Studio ("we," "us," or "our").</p>
 
         <h2>1. Agreement to Terms</h2>
         <p>By accessing or using our Service, you agree to be bound by these Terms. If you do not agree to these Terms, you may not use the Service.</p>
 
         <h2>2. The Service</h2>
-        <p>ChatBot Pro provides a platform for users to generate custom AI-powered chatbot scripts. You are responsible for the configuration of your chatbot, including the business information, personality, and FAQs you provide. The generated script is intended to be embedded on your website.</p>
+        <p>ChatBot Studio provides a platform for users to generate custom AI-powered chatbot scripts. You are responsible for the configuration of your chatbot, including the business information, personality, and FAQs you provide. The generated script is intended to be embedded on your website.</p>
 
         <h2>3. User Accounts</h2>
         <p>To access certain features of the Service, you must create an account. You are responsible for safeguarding your account information and for all activities that occur under your account. You must notify us immediately of any unauthorized use of your account.</p>
@@ -44,7 +44,7 @@ export const TermsOfService: React.FC<LegalPageProps> = ({ onBack }) => {
         <p>The Service is provided on an "AS IS" and "AS AVAILABLE" basis. We make no warranties, express or implied, regarding the operation or availability of the Service or the accuracy of the information, content, or materials included therein.</p>
         
         <h2>9. Limitation of Liability</h2>
-        <p>In no event shall ChatBot Pro, nor its directors, employees, partners, agents, suppliers, or affiliates, be liable for any indirect, incidental, special, consequential or punitive damages, including without limitation, loss of profits, data, use, goodwill, or other intangible losses, resulting from your access to or use of or inability to access or use the Service.</p>
+        <p>In no event shall ChatBot Studio, nor its directors, employees, partners, agents, suppliers, or affiliates, be liable for any indirect, incidental, special, consequential or punitive damages, including without limitation, loss of profits, data, use, goodwill, or other intangible losses, resulting from your access to or use of or inability to access or use the Service.</p>
 
         <h2>10. Governing Law</h2>
         <p>These Terms shall be governed and construed in accordance with the laws of the jurisdiction in which our company is established, without regard to its conflict of law provisions.</p>
@@ -53,7 +53,7 @@ export const TermsOfService: React.FC<LegalPageProps> = ({ onBack }) => {
         <p>We reserve the right, at our sole discretion, to modify or replace these Terms at any time. We will provide at least 30 days' notice before any new terms take effect. By continuing to access or use our Service after those revisions become effective, you agree to be bound by the revised terms.</p>
 
         <h2>12. Contact Us</h2>
-        <p>If you have any questions about these Terms, please contact us at support@chatbotpro.example.com.</p>
+        <p>If you have any questions about these Terms, please contact us at support@chatbotstudio.example.com.</p>
       </div>
 
       <div className="mt-8 pt-5 border-t border-gray-200 dark:border-gray-700 flex justify-start">

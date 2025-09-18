@@ -9,6 +9,7 @@ declare const Deno: {
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { GoogleGenAI, Type } from 'https://esm.sh/@google/genai@^1.17.0';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.44.4';
 import { corsHeaders } from '../_shared/cors.ts';
 
 // Define the expected JSON schema for the Gemini API response.
@@ -33,31 +34,56 @@ const responseSchema = {
 serve(async (req) => {
   // Handle preflight CORS requests for browser security.
   if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: corsHeaders });
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
+    // 1. Initialize environment variables and clients
     const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
-    if (!GEMINI_API_KEY) {
-      throw new Error("The server is not configured for AI suggestions. Missing GEMINI_API_KEY.");
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+    const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
+
+    if (!GEMINI_API_KEY || !SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      throw new Error("Server configuration error: Missing required environment variables.");
     }
     const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    
+    // 2. Authenticate the user making the request
+    const authorization = req.headers.get('Authorization');
+    if (!authorization) {
+        return new Response(JSON.stringify({ error: 'Missing authorization header' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }});
+    }
+    
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        global: { headers: { Authorization: authorization } },
+    });
+    
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+        return new Response(JSON.stringify({ error: `Authentication failed: ${userError?.message || 'No user found'}` }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }});
+    }
 
     const { url } = await req.json();
     if (!url) {
       throw new Error("Missing 'url' in request body.");
     }
 
-    // Fetch the HTML content from the provided URL.
+    // 3. Fetch the HTML content from the provided URL with a timeout.
     let pageContent = '';
     try {
-        const response = await fetch(url);
+        const signal = AbortSignal.timeout(15000); 
+        const response = await fetch(url, { signal });
+
         if (!response.ok) {
             throw new Error(`Failed to fetch the URL. Status: ${response.status} ${response.statusText}`);
         }
         pageContent = await response.text();
     } catch (fetchError) {
         console.error("Error fetching URL:", fetchError);
+        if (fetchError.name === 'TimeoutError') {
+            throw new Error(`The request to the website timed out after 15 seconds. The site might be slow, blocking requests, or temporarily unavailable.`);
+        }
         throw new Error(`Could not retrieve content from the provided URL. Please ensure it is correct and publicly accessible. Details: ${fetchError.message}`);
     }
 
@@ -82,7 +108,7 @@ ${pageContent}
 \`\`\`
 `;
 
-    // Call the Gemini API to generate the FAQs.
+    // 4. Call the Gemini API to generate the FAQs.
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: userPrompt,

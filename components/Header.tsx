@@ -60,7 +60,7 @@ export const Header: React.FC<HeaderProps> = ({ onGetStarted, onNavigateHome, on
           <div className="flex lg:flex-1">
             <a href="#" onClick={handleLogoClick} className="-m-1.5 p-1.5 flex items-center space-x-2">
               <LogoIcon className="w-8 h-8 text-primary" />
-              <span className="text-2xl font-bold text-gray-900 dark:text-white">ChatBot Pro</span>
+              <span className="text-xl font-bold text-gray-900 dark:text-white sm:text-2xl">ChatBot Studio</span>
             </a>
           </div>
           <div className="flex lg:hidden">
@@ -107,7 +107,7 @@ export const Header: React.FC<HeaderProps> = ({ onGetStarted, onNavigateHome, on
                     <div className="flex items-center justify-between">
                         <a href="#" onClick={handleLogoClick} className="-m-1.5 p-1.5 flex items-center space-x-2">
                             <LogoIcon className="w-8 h-8 text-primary" />
-                            <span className="text-xl font-bold text-gray-900 dark:text-white">ChatBot Pro</span>
+                            <span className="text-xl font-bold text-gray-900 dark:text-white">ChatBot Studio</span>
                         </a>
                         <button
                             type="button"
@@ -172,7 +172,7 @@ export const Header: React.FC<HeaderProps> = ({ onGetStarted, onNavigateHome, on
           <a href="#" onClick={handleLogoClick} className="flex items-center space-x-3">
             <LogoIcon className="w-8 h-8 text-primary" />
             <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">
-              ChatBot Pro
+              ChatBot Studio
             </h1>
           </a>
           <div className="flex items-center space-x-4">
@@ -185,7 +185,7 @@ export const Header: React.FC<HeaderProps> = ({ onGetStarted, onNavigateHome, on
                     onClick={onNavigateToDashboard}
                     className="px-4 py-2 text-sm font-semibold text-primary-dark dark:text-primary-light bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
                   >
-                    User View
+                    My Dashboard
                   </button>
                 )}
                 {isAdmin && appState !== 'admin' && (

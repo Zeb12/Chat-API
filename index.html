@@ -5,23 +5,28 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
+    <!-- Cache-Control Headers: Instruct browsers not to cache this page -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+
     <!-- SEO Meta Tags -->
-    <title>ChatBot Pro: AI Chatbot Generator for Your Website | No-Code Setup</title>
-    <meta name="description" content="Create a custom AI chatbot for your website in minutes with ChatBot Pro. No coding required. Define personality, add FAQs, and embed a powerful script to boost engagement." />
+    <title>ChatBot Studio: AI Chatbot Generator for Your Website | No-Code Setup</title>
+    <meta name="description" content="Create a custom AI chatbot for your website in minutes with ChatBot Studio. No coding required. Define personality, add FAQs, and embed a powerful script to boost engagement." />
     <meta name="keywords" content="AI, chatbot, generator, custom chatbot, embeddable chatbot, customer support, website widget, no-code, business AI, lead generation, SaaS, website AI" />
-    <meta name="author" content="ChatBot Pro Team" />
+    <meta name="author" content="ChatBot Studio Team" />
 
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://aichatbotgenerator.example.com/" />
-    <meta property="og:title" content="ChatBot Pro: AI Chatbot Generator for Your Website" />
+    <meta property="og:title" content="ChatBot Studio: AI Chatbot Generator for Your Website" />
     <meta property="og:description" content="Generate and embed a custom AI chatbot on your website in minutes. Define its personality, business info, and FAQs without writing a single line of code." />
     <meta property="og:image" content="https://aichatbotgenerator.example.com/og-image.png" />
 
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image" />
     <meta property="twitter:url" content="https://aichatbotgenerator.example.com/" />
-    <meta property="twitter:title" content="ChatBot Pro: AI Chatbot Generator for Your Website" />
+    <meta property="twitter:title" content="ChatBot Studio: AI Chatbot Generator for Your Website" />
     <meta property="twitter:description" content="Generate and embed a custom AI chatbot on your website in minutes. Define its personality, business info, and FAQs without writing a single line of code." />
     <meta property="twitter:image" content="https://aichatbotgenerator.example.com/og-image.png" />
 
@@ -54,6 +59,8 @@
               'fade-in': 'fadeIn 0.5s ease-out forwards',
               'slide-up': 'slideUp 0.5s ease-out forwards',
               'float': 'float 6s ease-in-out infinite',
+              'progress': 'progress 5s linear forwards',
+              'blob': 'blob 20s infinite',
             },
             keyframes: {
               fadeIn: {
@@ -68,12 +75,44 @@
                 '0%': { transform: 'translateY(0px)' },
                 '50%': { transform: 'translateY(-20px)' },
                 '100%': { transform: 'translateY(0px)' },
-              }
+              },
+              progress: {
+                '0%': { width: '0%' },
+                '100%': { width: '100%' },
+              },
+              blob: {
+                '0%': {
+                  transform: 'translate(0px, 0px) scale(1)',
+                },
+                '25%': {
+                  transform: 'translate(200px, 150px) scale(1.2)',
+                },
+                '50%': {
+                  transform: 'translate(-150px, -200px) scale(0.8)',
+                },
+                '75%': {
+                  transform: 'translate(100px, -100px) scale(1.1)',
+                },
+                '100%': {
+                  transform: 'translate(0px, 0px) scale(1)',
+                },
+              },
             }
           }
         }
       }
     </script>
+    <style>
+      .scroll-animate {
+        opacity: 0;
+        transform: translateY(30px);
+        transition: opacity 0.8s cubic-bezier(0.6, 0.2, 0.1, 1), transform 0.8s cubic-bezier(0.6, 0.2, 0.1, 1);
+      }
+      .scroll-animate.is-visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    </style>
   <script type="importmap">
 {
   "imports": {
@@ -86,8 +125,16 @@
 }
 </script>
 </head>
-  <body class="bg-slate-50 dark:bg-gray-900 text-onSurface dark:text-gray-200 font-sans antialiased">
+  <body class="text-onSurface dark:text-gray-200 font-sans antialiased">
     <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
+    <script type="module">
+      // Cache-busting: Dynamically load the main script with a timestamp.
+      // This forces the browser to fetch a fresh version on every page load,
+      // bypassing any aggressive caching of the script file itself.
+      const script = document.createElement('script');
+      script.type = 'module';
+      script.src = `/index.tsx?v=${Date.now()}`;
+      document.body.appendChild(script);
+    </script>
   </body>
 </html>
